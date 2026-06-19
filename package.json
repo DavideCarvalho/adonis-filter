@@ -4,10 +4,15 @@
   "private": true,
   "description": "Filter library (query builder + Lucid adapter) for the Agora AdonisJS ecosystem.",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/DavideCarvalho/adonis-filter.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DavideCarvalho/adonis-filter.git"
+  },
   "author": "Davi Carvalho <davi@goflip.ai>",
   "packageManager": "pnpm@9.0.0",
-  "engines": { "node": ">=20.6.0" },
+  "engines": {
+    "node": ">=20.6.0"
+  },
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
@@ -25,6 +30,8 @@
     "@changesets/cli": "^2.27.0",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@swc/core": "^1.15.40",
+    "unplugin-swc": "^1.5.9"
   }
 }
