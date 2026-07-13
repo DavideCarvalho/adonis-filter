@@ -7,11 +7,11 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 
-`@agora/filter` is a pair of small, focused packages:
+`@adonis-agora/filter` is a pair of small, focused packages:
 
 | Package | Where it runs | What it does |
 |---|---|---|
-| [`@agora/filter`](/docs/filter/guides/lucid) | server (AdonisJS) | parse a request → apply it to a Lucid query under a field allow-list → resolve pagination |
+| [`@adonis-agora/filter`](/docs/filter/guides/lucid) | server (AdonisJS) | parse a request → apply it to a Lucid query under a field allow-list → resolve pagination |
 | [`@agora/filter-client`](/docs/filter/guides/client) | browser / Node | a fluent, type-safe builder that emits exactly the query string the server parses |
 
 The server package is **plain functions** — no provider to register, no config file, no decorators. You import `parseFilterRequest` and `applyFilter` and call them. Most endpoints are wired in a couple of minutes.
@@ -31,17 +31,17 @@ The server package is **plain functions** — no provider to register, no config
 <Tabs items={['node ace', 'npm', 'pnpm']}>
   <Tab value="node ace">
     ```bash
-    node ace add @agora/filter
+    node ace add @adonis-agora/filter
     ```
   </Tab>
   <Tab value="npm">
     ```bash
-    npm install @agora/filter
+    npm install @adonis-agora/filter
     ```
   </Tab>
   <Tab value="pnpm">
     ```bash
-    pnpm add @agora/filter
+    pnpm add @adonis-agora/filter
     ```
   </Tab>
 </Tabs>
@@ -53,7 +53,7 @@ npm install @agora/filter-client
 ```
 
 <Callout type="info">
-`@agora/filter` has **no runtime dependency on Lucid** — it targets a structural `QueryBuilderLike` interface that any Lucid query builder satisfies. There is no service provider to register and nothing to add to `adonisrc.ts`.
+`@adonis-agora/filter` has **no runtime dependency on Lucid** — it targets a structural `QueryBuilderLike` interface that any Lucid query builder satisfies. There is no service provider to register and nothing to add to `adonisrc.ts`.
 </Callout>
 
 ---
@@ -63,7 +63,7 @@ npm install @agora/filter-client
 `parseFilterRequest(qs)` takes a decoded query object — exactly what AdonisJS's `request.qs()` returns — and reshapes it into a structured `FilterInput`. It is a pure reshape: no validation, no allow-listing (that happens in `applyFilter`).
 
 ```ts
-import { parseFilterRequest } from '@agora/filter'
+import { parseFilterRequest } from '@adonis-agora/filter'
 
 const input = parseFilterRequest(request.qs())
 // {
@@ -94,7 +94,7 @@ It understands every shape the client builder emits:
 `applyFilter(query, input, config)` validates the input, prunes it against the allow-list, mutates the query builder in place, and **returns the resolved pagination**:
 
 ```ts
-import { applyFilter } from '@agora/filter'
+import { applyFilter } from '@adonis-agora/filter'
 import User from '#models/user'
 
 const query = User.query()
@@ -122,7 +122,7 @@ Putting it together in an AdonisJS controller:
 
 ```ts title="app/controllers/users_controller.ts"
 import type { HttpContext } from '@adonisjs/core/http'
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import User from '#models/user'
 
 export default class UsersController {

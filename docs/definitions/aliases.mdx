@@ -1,0 +1,61 @@
+---
+title: Field Aliases
+description: Remap a client-facing field name to a different target column before allow-listing — decouple the public query vocabulary from your schema, without cascading or cycles.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Field aliases** remap a client-facing field name to a different resolved target — a base column, a relation path, or a JSON sub-path. The alias is a public name; the target is what your schema actually exposes. This lets the query vocabulary stay stable while the underlying columns move.
+
+---
+
+## Declaring aliases
+
+Add an `aliases` map (client alias → target field) to a `defineFilter` spec or a raw `FilterConfig`:
+
+```ts
+import { defineFilter } from '@adonis-agora/filter'
+
+export const userFilter = defineFilter({
+  filterable: ['status', 'name'],
+  relations: { posts: { filterable: ['title'] } },
+  aliases: {
+    legacyStatus: 'status',        // rename a column publicly
+    postTitle: 'posts.title',      // flatten a relation path into a single alias
+    tier: 'metadata.tier',         // point at a JSON sub-path
+  },
+})
+```
+
+Now `?filter[legacyStatus]=active` resolves to the `status` column, and `?filter[postTitle]=hi` resolves to the whitelisted `posts.title` relation path (translated to a `whereHas` subquery).
+
+---
+
+## Resolution runs first — and is the security-safe order
+
+Alias resolution runs **before** everything else. The allow-list, structural validation, and query builder all see the **resolved target**, never the client-facing alias key:
+
+```
+?filter[legacyStatus]=active
+  → resolve alias:  legacyStatus → status
+  → allow-list:     is `status` filterable?  ✓
+  → apply:          where('status', 'active')
+```
+
+This means the allow-list is always expressed in terms of your real columns — an alias can only reach a target that is itself whitelisted.
+
+<Callout type="info">
+`resolveFieldAlias`, `remapFilterAliases`, and `remapSortAliases` are exported if you need to remap fields outside the runner. `resolveFieldAlias(aliases, field)` is the single choke point.
+</Callout>
+
+---
+
+## No cascading, no cycles
+
+Aliases resolve exactly **one hop**. A target is never re-run through the alias map, even when it happens to also be a declared alias key — which makes alias cycles structurally impossible:
+
+```ts
+resolveFieldAlias({ a: 'b', b: 'c' }, 'a') // → 'b'  (not 'c')
+```
+
+Prototype-pollution-style keys (`__proto__`, `constructor`, `prototype`, `toString`, `valueOf`) are never treated as alias lookup keys.

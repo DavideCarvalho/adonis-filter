@@ -1,0 +1,128 @@
+---
+title: Client Codegen
+description: Generate a typed @agora/filter-client builder from a FilterSpec — generateFilterClient (pure string transform) and the make:filter-client ace command that writes the modules to disk.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+A `defineFilter` spec already knows exactly which fields are filterable. **Codegen** turns that spec into a typed front-end client — a `filterQueryTyped<Fields, FieldTypes>()` builder scoped to the spec's fields — so the browser and the server share one field-name allow-list, checked at compile time.
+
+<Callout type="info">
+Because the Adonis filter declaration is a plain runtime `FilterSpec` (not decorator metadata), generation is a **pure function of the spec** — string in, string out, no AST walk, no reflection. The ace command is just the IO wrapper.
+</Callout>
+
+---
+
+## `generateFilterClient` — the pure core
+
+Takes a spec + a name, returns a TypeScript module as a string:
+
+```ts
+import { defineFilter, generateFilterClient } from '@adonis-agora/filter'
+
+const spec = defineFilter({
+  filterable: ['age', 'name', 'status'],
+  sortable: ['age', 'name'],
+  searchable: ['name'],
+  relations: { posts: { filterable: ['title', 'published'] } },
+  defaultSort: [{ field: 'name', direction: 'asc' }],
+  defaultSize: 25,
+  maxSize: 100,
+})
+
+const code = generateFilterClient(spec, {
+  name: 'people',
+  fieldTypes: { age: { kind: 'number' }, status: { enumValues: ['active', 'inactive'] } },
+})
+```
+
+For `name: 'people'`, the emitted module exports:
+
+- `type PeopleFilterFields` — the union of filterable field paths (base + relation-dotted, e.g. `"age" | "name" | "status" | "posts.title" | "posts.published"`) — the client's field-name allow-list as concrete string literals;
+- `interface PeopleFilterFieldTypes` — the per-field value-type map (only when `fieldTypes` is supplied), which drives the client's operator/value narrowing;
+- `const peopleFilterMeta` — runtime metadata (filterable/sortable/searchable fields, whitelisted relations, per-field kinds, default sort / page size / max size, and the cursor keyset);
+- `function peopleFilterQuery()` — a `filterQueryTyped<Fields, FieldTypes>()` factory returning a type-safe builder scoped to this spec.
+
+### `fieldTypes` — unlock operator narrowing
+
+A `FilterSpec` carries the allow-list but not column value **types** (Lucid models aren't reflected). Supplying `fieldTypes` (keyed by field path) unlocks type-aware operator narrowing in the client. Without it the client is still field-name-safe, just operator-permissive.
+
+| `FilterFieldTypeInfo` | Emits |
+|---|---|
+| `{ kind: 'string' \| 'number' \| 'boolean' \| 'date' \| 'json' }` | the matching TS type |
+| `{ enumValues: ['A', 'B'] }` | a union `"A" \| "B"` (wins over `kind`) |
+| `{ typeRef: 'Role' }` | the named type verbatim (wins over everything) |
+| `{ nullable: true }` | appends `\| null` |
+
+Options: `name` (base identifier), `fieldTypes`, `clientModule` (import specifier, default `@agora/filter-client`), `maxDepth` (relation-path cap, default `spec.maxDepth`), `banner` (the "DO NOT EDIT" header, default `true`).
+
+<Callout type="info">
+`filterableFieldPaths(spec)` and `sortableFieldPaths(spec)` are exported if you just want the enumerated field-path lists (e.g. to build your own artifact). A `'*'` allow-list can't be enumerated, so the emitter falls back to a permissive `string` field union.
+</Callout>
+
+---
+
+## `make:filter-client` — the ace command
+
+The command loads your app's declared specs and writes each generated client to disk. Point it at a module that exports a `filters` manifest:
+
+<Steps>
+<Step>
+
+Declare the manifest (`FilterClientManifest`) — each entry is a `defineFilter(...)` spec plus optional `fieldTypes` / overrides:
+
+```ts title="config/filter.ts"
+import { defineFilter } from '@adonis-agora/filter'
+import type { FilterClientManifest } from '@adonis-agora/filter'
+
+export const filters: FilterClientManifest = {
+  people: {
+    spec: defineFilter({ filterable: ['name', 'age'] }),
+    fieldTypes: { age: { kind: 'number' } },
+  },
+}
+```
+
+</Step>
+<Step>
+
+Run the command:
+
+```bash
+node ace make:filter-client
+# or with an explicit entrypoint + output dir:
+node ace make:filter-client config/filter.js --output app/generated/filters
+```
+
+</Step>
+<Step>
+
+It writes one `snake_case`d module per spec (e.g. `people_filter_client.ts`) into the output directory (default `app/generated/filters`):
+
+```
+create app/generated/filters/people_filter_client.ts
+Generated 1 filter client(s) into app/generated/filters.
+```
+
+</Step>
+</Steps>
+
+Defaults: entrypoint `config/filter.js`, output `app/generated/filters`. The manifest may be a named `filters` export or the module's default export. `generateFilterClients(manifest)` (the pure expansion the command wraps) is exported too, if you'd rather write the files yourself.
+
+---
+
+## Using the generated client
+
+Import the generated factory in the front-end and build a fully typed, field-name-checked query string:
+
+```ts title="web/people-table.ts"
+import { peopleFilterQuery } from '#generated/filters/people_filter_client'
+
+const qs = peopleFilterQuery()
+  .contains('name', 'Al')   // 'name' is checked against PeopleFilterFields
+  .gte('age', 18)           // 'age' narrowed to number ops via fieldTypes
+  .toQueryString()
+```
+
+The generated module targets `@agora/filter-client`'s `filterQueryTyped` factory — the same runtime the [Client Builder](/docs/filter/guides/client) documents.

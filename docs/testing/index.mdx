@@ -1,0 +1,110 @@
+---
+title: Testing Utilities
+description: The @adonis-agora/filter/testing subpath — a shipped MockQueryBuilder recorder that satisfies QueryBuilderLike, so you can unit-test filter definitions (including relation whereHas subqueries and raw search/vector SQL) without a database.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The package ships a recording query-builder stand-in under the **`@adonis-agora/filter/testing`** subpath. It satisfies `QueryBuilderLike`, so any adapter/runner helper — or a whole `defineFilter` spec via `applyFilterFromRequest` — can be driven against it and the resulting SQL translation asserted, with no database.
+
+<Callout type="info">
+This is the same recorder the library's own test suite uses. The [Testing guide](/docs/filter/guides/testing) shows the broader picture (hand-rolled mocks, allow-list assertions, and end-to-end Japa tests); this page covers the shipped helper you can import directly instead of writing your own.
+</Callout>
+
+---
+
+## `MockQueryBuilder` / `makeMockQueryBuilder`
+
+```ts title="tests/unit/user_filter.spec.ts"
+import { test } from '@japa/runner'
+import { applyFilter } from '@adonis-agora/filter'
+import { makeMockQueryBuilder } from '@adonis-agora/filter/testing'
+
+test('applies a contains filter as ILIKE', ({ assert }) => {
+  const qb = makeMockQueryBuilder()
+
+  applyFilter(
+    qb,
+    { filters: [{ field: 'name', operator: 'contains', value: 'Al' }] },
+    { allowed: ['name'] },
+  )
+
+  assert.deepInclude(qb.flatten(), { method: 'whereILike', args: ['name', '%Al%'] })
+})
+```
+
+Every builder method records its call as `{ method, args }`. Helpers for asserting the recorded calls:
+
+| Method | What it returns |
+|---|---|
+| `flatten()` | every leaf call across this builder and all nested groups **and** relation subqueries (excludes the anonymous group markers, keeps `whereHas`). |
+| `find(method)` | the first flattened call matching `method`. |
+| `findAll(method)` | every flattened call matching `method`. |
+| `calls` / `children` | the raw recorded calls and child recorders, for asserting exact nesting. |
+
+`flatten()` collects leaf calls regardless of grouping depth, so assertions don't care about the precise AND/OR nesting.
+
+---
+
+## Asserting relation subqueries
+
+A dotted relation-path filter records a `whereHas(relation, …)` and runs its nested callback against a child recorder — so you can prove a `posts.title` filter became a real subquery:
+
+```ts
+import { applyColumnFilters } from '@adonis-agora/filter'
+import { MockQueryBuilder } from '@adonis-agora/filter/testing'
+
+const qb = new MockQueryBuilder()
+applyColumnFilters(qb, [{ field: 'posts.title', operator: 'equals', value: 'Hi' }])
+
+assert.deepEqual(qb.find('whereHas')?.args, ['posts'])
+// the leaf lands on the bare column inside the relation subquery:
+assert.deepInclude(qb.flatten(), { method: 'where', args: ['title', 'Hi'] })
+```
+
+---
+
+## Asserting raw SQL (search + vector)
+
+`whereRaw` / `orderByRaw` are recorded as `[sql, bindings]`, so you can assert that full-text search and vector similarity emit the right SQL — and that user input travels as a binding, never spliced into SQL:
+
+```ts
+import { applyFullTextSearch, applyVectorSimilarity } from '@adonis-agora/filter'
+import { makeMockQueryBuilder } from '@adonis-agora/filter/testing'
+
+const qb = makeMockQueryBuilder()
+applyFullTextSearch(qb, { query: 'foo bar', column: 'search_vector' })
+assert.deepEqual(qb.find('whereRaw')?.args, [
+  `"search_vector" @@ websearch_to_tsquery('english', ?)`,
+  ['foo bar'],
+])
+
+const vq = makeMockQueryBuilder()
+applyVectorSimilarity(vq, { column: 'embedding', vector: [0.1, 0.2, 0.3] })
+assert.deepEqual(vq.find('orderByRaw')?.args, ['"embedding" <=> ?::vector asc', ['[0.1,0.2,0.3]']])
+```
+
+---
+
+## Testing a whole spec from a request
+
+Drive `applyFilterFromRequest` with a fake ctx (just `request.qs()`, plus whatever a tenant resolver reads) against the recorder:
+
+```ts
+import { applyFilterFromRequest, defineFilter } from '@adonis-agora/filter'
+import { makeMockQueryBuilder } from '@adonis-agora/filter/testing'
+
+const spec = defineFilter({
+  filterable: ['name'],
+  tenant: { column: 'tenantId', resolve: (ctx) => (ctx as any).tenantId },
+})
+
+const qb = makeMockQueryBuilder()
+const ctx = { request: { qs: () => ({ filter: { name: 'Al', tenantId: 999 } }) }, tenantId: 42 }
+
+applyFilterFromRequest(qb, spec, ctx)
+
+// the server tenant scope lands, the client's tenantId override is dropped:
+assert.deepInclude(qb.flatten(), { method: 'where', args: ['tenantId', 42] })
+assert.isUndefined(qb.flatten().find((c) => c.args.includes(999)))
+```

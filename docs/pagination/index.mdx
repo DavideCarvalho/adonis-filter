@@ -1,0 +1,108 @@
+---
+title: Cursor Pagination
+description: Keyset (cursor) pagination — applyCursor / applyCursorFromRequest build a stable, seek-based page from the sort + a primary-key tiebreaker; buildCursorPage assembles the page and its opaque forward/backward cursors.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Offset pagination (`applyFilter` → `page`/`size`) is simple but drifts as rows are inserted and gets slow on deep pages. **Keyset (cursor) pagination** seeks from a boundary row instead of counting rows, so it stays stable and fast at any depth. The library builds the keyset from your active sort plus a primary-key tiebreaker, encodes the boundary as an opaque cursor, and hands you a ready-to-serve page.
+
+<Callout type="info">
+Cursor pagination goes through the **same allow-list boundary** as `applyFilter` — filters, search, and sort are validated and pruned identically. Only the paging mechanism differs.
+</Callout>
+
+---
+
+## The building blocks
+
+| Export | Role |
+|---|---|
+| `applyCursor(qb, input, config)` | Apply filters + search + keyset seek to a builder; returns a `ResolvedCursor`. |
+| `applyCursorFromRequest(qb, spec, ctx)` | The `defineFilter` counterpart — sources filters + `after`/`before`/`first`/`last` from ctx. |
+| `buildCursorPage(rows, resolved)` | Assemble the page + boundary cursors from the fetched rows. |
+| `buildKeyset(sorts, primaryKey)` | The effective sort with a stable PK tiebreaker appended (used internally). |
+| `encodeCursor` / `decodeCursor` | Opaque, URL-safe base64url codec for keyset values (round-trips `Date`s). |
+
+---
+
+## With a `FilterSpec` — `applyCursorFromRequest`
+
+The idiomatic path. Same spec you use for offset, cursor params instead of `page`/`size`:
+
+```ts title="app/controllers/users_controller.ts"
+import { applyCursorFromRequest, buildCursorPage } from '@adonis-agora/filter'
+import { userFilter } from '#filters/user_filter'
+import User from '#models/user'
+
+async index(ctx: HttpContext) {
+  const query = User.query()
+
+  // primaryKey defaults to 'id'
+  const resolved = applyCursorFromRequest(query, userFilter, ctx, { primaryKey: 'id' })
+
+  const rows = await query.exec()
+  const page = buildCursorPage(rows.map((r) => r.serialize()), resolved)
+
+  return {
+    data: page.items,
+    nextCursor: page.nextCursor, // opaque string, or null on the last page
+    prevCursor: page.prevCursor,
+    hasNext: page.hasNext,
+    hasPrev: page.hasPrev,
+  }
+}
+```
+
+Cursor params are read from the query string as `after` / `before` / `first` / `last` (or the JSON:API `page[after]` / `page[before]` / `page[size]` shapes). `after` and `before` are mutually exclusive; `after` wins if both are given.
+
+---
+
+## Low-level — `applyCursor` + `buildCursorPage`
+
+Without a spec, drive the runner directly with a `FilterInput` + cursor params:
+
+```ts
+import { applyCursor, buildCursorPage } from '@adonis-agora/filter'
+
+const resolved = applyCursor(
+  User.query(),
+  { sort: [{ field: 'name', direction: 'asc' }], after: cursor, first: 20 },
+  { allowed: ['name'], primaryKey: 'id' },
+)
+// resolved: { keyset, size, backward, hasCursor }
+
+const rows = await query.exec()
+const page = buildCursorPage(rows, resolved)
+```
+
+<Steps>
+<Step>
+**Keyset.** The effective (allow-listed) sort plus the primary-key tiebreaker forms the keyset. The tiebreaker is appended only if not already present, inheriting the last sort column's direction so the ordering stays monotonic — a correct row-value comparison requires it.
+</Step>
+<Step>
+**Seek.** A supplied `after`/`before` cursor is decoded to the boundary row's keyset values and applied as a portable row-value seek predicate (an "OR of AND tiers" expansion that works across SQL dialects). A malformed cursor is ignored, not fatal.
+</Step>
+<Step>
+**Fetch + 1.** The builder is ordered and limited to `size + 1` — one extra row so `buildCursorPage` can detect whether a further page exists.
+</Step>
+<Step>
+**Assemble.** `buildCursorPage` trims the extra row, re-reverses backward pages back into the requested order, and computes the `next`/`prev` cursors from the keyset boundaries.
+</Step>
+</Steps>
+
+<Callout type="warn" title="Feed buildCursorPage plain rows">
+`buildCursorPage` reads keyset values off each row by field name (dotted paths like `author.name` are walked). Pass serialized/plain objects (e.g. `model.serialize()`), and make sure the keyset columns are present on them.
+</Callout>
+
+---
+
+## Backward paging
+
+A `before` cursor pages backward: the keyset directions are internally reversed so the seek and ordering walk the other way, the rows come back reversed, and `buildCursorPage` flips them to restore your requested order. The boundary cursors round-trip regardless of direction, so `prevCursor` from a forward page is a valid `before` for the previous page.
+
+---
+
+## Cursors are opaque
+
+A cursor is a base64url-encoded JSON array of the keyset values — URL-safe (no `+` `/` `=`) and intentionally opaque; only this module reads it back. `Date` values are tagged so they decode back to `Date` instances (plain JSON would yield a string and break date keyset comparisons). Treat cursors as black boxes on the client — never parse or construct them by hand.

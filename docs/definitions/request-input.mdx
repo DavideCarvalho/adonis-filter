@@ -1,0 +1,78 @@
+---
+title: Request Input
+description: The input layer — parseSpatieRequest for the full Spatie/JSON:API shape (includes, sparse fieldsets, cursor pagination), resolveInputFromRequest for where input is read from, and normalizeInput for key casing.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`parseFilterRequest` covers the common case. Three additional, composable helpers cover the richer Spatie / JSON:API surface, control **where** input is sourced, and normalize field-name casing. All are pure reshapes — no validation or allow-listing (that happens downstream in `applyFilter`).
+
+---
+
+## `parseSpatieRequest` — the full Spatie/JSON:API shape
+
+A superset of `parseFilterRequest`: it understands the same `filter` / `sort` / `search` shapes **plus** JSON:API relation includes, sparse fieldsets, and cursor pagination. It returns a `SpatieInput` (a `FilterInput` extended with `select`, `include`, and cursor params) — ready to hand to `applyFilter` (offset) or `applyCursor` (keyset); the extra fields are ignored by whichever runner does not use them.
+
+```ts
+import { parseSpatieRequest } from '@adonis-agora/filter'
+
+const input = parseSpatieRequest(request.qs())
+```
+
+| Query string | Mapped to |
+|---|---|
+| `filter[name]=Al` | `equals` column filter |
+| `filter[id]=1,2,3` / `filter[id][]=1&filter[id][]=2` | `in` column filter |
+| `filter[age][gte]=18` | operator column filter |
+| `sort=-createdAt,name` | sort items |
+| `include=posts,comments` | `include: ['posts', 'comments']` |
+| `fields[users]=id,name` | `select: ['id', 'name']` (sparse fieldsets, flattened + de-duped) |
+| `page[number]=2&page[size]=10` | offset (`page`/`size`) |
+| `page[after]=<cursor>&page[size]=10` | cursor (`after`/`first`) |
+
+`page[after]` / `page[before]` route to cursor pagination (`after`/`first`, `before`/`last`); otherwise `page[number]` / `page[size]` route to offset. `after` wins if both cursor bounds are present.
+
+---
+
+## `resolveInputFromRequest` — where input comes from
+
+Reads the raw structured input from a request according to an `InputSource` — useful when filters arrive in the body (a complex `POST /search`) rather than the query string:
+
+```ts
+import { resolveInputFromRequest } from '@adonis-agora/filter'
+
+const raw = resolveInputFromRequest(req, 'auto')
+```
+
+| `source` | Behavior |
+|---|---|
+| `'auto'` | query on reads (GET/HEAD); query + body merged, **body wins**, on writes (POST/PUT/PATCH/DELETE) |
+| `'query'` / `'body'` | always that container |
+| `'body.filters'` (a dot-path) | the nested object at that path |
+| `(req) => …` (a function) | a custom extractor |
+
+The request is treated structurally (`{ method, query, body }`), so an AdonisJS `HttpContext.request` or a plain object both work. The result is always a fresh shallow copy.
+
+---
+
+## `normalizeInput` — key casing
+
+Normalizes an input object's **top-level keys** — case-transforming them and optionally stripping `Id` suffixes and empty values — so a `snake_case` API can map onto `camelCase` model columns (or vice-versa):
+
+```ts
+import { normalizeInput } from '@adonis-agora/filter'
+
+normalizeInput({ company_id: 5, first_name: 'a' }, { normalizer: 'camelCase' })
+// → { companyId: 5, firstName: 'a' }
+
+normalizeInput({ companyId: 5 }, { normalizer: 'snakeCase', dropId: true })
+// → { company: 5 }   (snake_case + trailing Id stripped)
+```
+
+- `normalizer` — `'camelCase'`, `'snakeCase'`, or a `(key) => string` function.
+- `dropId` — strip a trailing `Id`/`_id` (and drop a bare `id`). Default `false`.
+- `stripEmpty` — drop `null`/`undefined`/`''` values. Default `true`.
+
+<Callout type="info">
+Only **top-level** keys are normalized; nested values are left untouched. Prototype-pollution keys are dropped and the result has a null prototype, so a hostile key can never reach `Object.prototype`.
+</Callout>

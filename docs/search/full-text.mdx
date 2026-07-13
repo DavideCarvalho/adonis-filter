@@ -1,0 +1,96 @@
+---
+title: Full-Text Search
+description: Postgres tsvector keyword search — route the request search term through websearch_to_tsquery / @@ against a tsvector column or to_tsvector-wrapped text columns, with optional ts_rank relevance ordering.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Full-text search** is keyword search: it matches the user's text query against a Postgres text-search document with `websearch_to_tsquery` and the `@@` operator, optionally ranked by `ts_rank`. This is a step up from the default ILIKE scan — it does stemming/lexeme matching and understands phrase/exclude syntax.
+
+<Callout type="info">
+This is **not** embedding similarity. It matches *words* against a tsvector document. To rank rows by a query *embedding*, see [Vector Similarity](/docs/filter/search/vector-similarity).
+</Callout>
+
+---
+
+## Config — route `search` through tsvector
+
+Add `fullText` to a `defineFilter` spec (or a raw `FilterConfig`). When set, the request's `search` term routes through tsvector full-text search **instead of** the ILIKE `searchable` scan.
+
+```ts
+import { defineFilter } from '@adonis-agora/filter'
+
+// A precomputed tsvector column (recommended — index it with a GIN index):
+export const articleFilter = defineFilter({
+  filterable: ['status', 'authorId'],
+  fullText: {
+    column: 'search_vector',   // a tsvector column
+    columnKind: 'tsvector',    // default for a single column
+    language: 'english',       // default; used for websearch_to_tsquery
+    rank: true,                // order best-match-first with ts_rank
+  },
+})
+```
+
+`?search=quick brown fox` then produces:
+
+```sql
+WHERE "search_vector" @@ websearch_to_tsquery('english', ?)   -- binding: 'quick brown fox'
+ORDER BY ts_rank("search_vector", websearch_to_tsquery('english', ?)) desc
+```
+
+### Options (`FullTextSearchConfig`)
+
+| Option | What it does |
+|---|---|
+| `column` | The document: a single precomputed `tsvector` column, or one-or-more plain text columns wrapped in `to_tsvector(...)` at query time. |
+| `columnKind` | `'tsvector'` (match directly) or `'text'` (wrap in `to_tsvector`). Defaults to `'tsvector'` for one column, `'text'` for multiple. |
+| `language` | Postgres text-search config for `websearch_to_tsquery` / `to_tsvector`. Default `'english'`. |
+| `rank` | Add `ORDER BY ts_rank(...) DESC` for best-match-first. Off by default (it changes default ordering). |
+
+---
+
+## Text columns (no tsvector column)
+
+If you don't have a precomputed tsvector column, point `column` at plain text column(s); they're wrapped in `to_tsvector` at query time, coalescing NULLs so a null column can't null the whole document:
+
+```ts
+fullText: { column: ['title', 'body'], columnKind: 'text', language: 'portuguese' }
+```
+
+```sql
+WHERE to_tsvector('portuguese', coalesce("title", '') || ' ' || coalesce("body", ''))
+      @@ websearch_to_tsquery('portuguese', ?)
+```
+
+<Callout type="warn">
+Query-time `to_tsvector` cannot use an index and re-tokenizes every row — fine for small tables, but for anything large prefer a stored, GIN-indexed `tsvector` column (`columnKind: 'tsvector'`).
+</Callout>
+
+---
+
+## Why `websearch_to_tsquery`
+
+`websearch_to_tsquery` (not the raw `to_tsquery`) parses arbitrary user input the way a search box works — multi-word text, `"quoted phrases"`, `-exclude`, `or` — **without throwing a syntax error** on stray punctuation. That makes it safe to feed raw user text.
+
+## Injection safety
+
+The user query string **always** travels as a positional binding (`websearch_to_tsquery('<lang>', ?)`) — it is never interpolated into SQL. The only spliced fragments are the column name(s) and the language config, each validated against a strict identifier charset before use, so neither can carry injection.
+
+---
+
+## Direct use
+
+`applyFullTextSearch` is exported for applying the search to an arbitrary builder outside the runner:
+
+```ts
+import { applyFullTextSearch } from '@adonis-agora/filter'
+
+applyFullTextSearch(query, {
+  query: 'quick brown fox',
+  column: 'search_vector',
+  rank: true,
+})
+```
+
+It is a no-op for a blank query.

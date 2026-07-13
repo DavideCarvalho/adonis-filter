@@ -1,0 +1,121 @@
+---
+title: Defining Filters
+description: defineFilter + applyFilterFromRequest — a declarative, reusable filter definition (filterable/sortable allow-lists, relation whitelist with a depth cap, tenant scope, and server defaults) applied to a Lucid query in one call.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+`parseFilterRequest` + `applyFilter` are the two-function primitive — great when a policy lives in one controller. When the same policy is reused across endpoints (and grows relations, a tenant scope, and default filters), reach for the **declarative definition**: build a `FilterSpec` once with `defineFilter`, then apply it on every request with `applyFilterFromRequest`.
+
+This is the AdonisJS-idiomatic replacement for the NestJS `@Filterable` / `@Relations` / `@TenantScoped` decorator stack — the same feature set, expressed as a plain, framework-free options object instead of metadata reflection.
+
+---
+
+## `defineFilter` — the declaration
+
+Build the spec **once** (module scope) and freeze it. It captures the whole policy: what is filterable/sortable, which relations are reachable, tenant scoping, and server-side defaults.
+
+```ts title="app/filters/user_filter.ts"
+import { defineFilter } from '@adonis-agora/filter'
+
+export const userFilter = defineFilter({
+  filterable: ['name', 'email', 'age', 'status'], // '*' to allow any base column
+  sortable: ['name', 'createdAt'],                // defaults to `filterable`
+  searchable: ['name', 'email'],                  // ILIKE scan for the `search` term
+
+  // Whitelisted relations — bare (unprefixed) columns; the request field is the
+  // dotted path `relation.column` (see Relation Filtering).
+  relations: {
+    posts: { filterable: ['title', 'status'], sortable: ['createdAt'] },
+  },
+
+  // Server policy, never exposed to the client allow-list:
+  tenant: { column: 'tenantId', resolve: (ctx) => ctx.auth.user.tenantId },
+  defaultFilters: [{ field: 'deletedAt', operator: 'isNull' }],
+  defaultSort: [{ field: 'createdAt', direction: 'desc' }],
+
+  defaultSize: 25,
+  maxSize: 100,
+})
+```
+
+The returned `FilterSpec` is frozen and reusable. Its `isFilterable(field)` / `isSortable(field)` predicates are the allow-list boundary — relation-path and depth aware.
+
+### Options
+
+| Option | What it does |
+|---|---|
+| `filterable` | Base columns clients may filter on. `'*'` allows any base column. **Required.** |
+| `sortable` | Base columns clients may sort on. Defaults to `filterable`. |
+| `searchable` | Columns the free-text `search` term scans with a portable ILIKE. |
+| `fullText` | Opt-in Postgres tsvector search — routes `search` through `websearch_to_tsquery`. See [Full-Text Search](/docs/filter/search/full-text). |
+| `relations` | Whitelisted relations + their nested `filterable`/`sortable` columns. See [Relation Filtering](/docs/filter/definitions/relations). |
+| `maxDepth` | Max relation-path hops (base column = 0). Defaults to the deepest declared relation nesting. |
+| `aliases` | Client-alias → target-field remapping. See [Field Aliases](/docs/filter/definitions/aliases). |
+| `vectorSimilarity` | Opt-in pgvector embedding-similarity ordering. See [Vector Similarity](/docs/filter/search/vector-similarity). |
+| `tenant` | Auto-scope a column to the tenant id resolved from ctx. |
+| `defaultFilters` | Server-declared filters always AND-combined with the request (bypass the allow-list — trusted policy). |
+| `defaultSort` | Sort applied when the request supplies none. |
+| `defaultSize` / `maxSize` | Page-size default (25) and hard cap (100). |
+| `throwOnInvalid` | Throw `InvalidColumnFilterError` on a disallowed field instead of dropping it. |
+
+<Callout type="info">
+`defineFilter` validates the **declaration** itself — a missing `filterable`, or a negative/non-integer `maxDepth`, throws `FilterDefinitionError` at wiring time (a developer error), separate from the request-time `InvalidColumnFilterError` the runner raises for a bad client request.
+</Callout>
+
+---
+
+## `applyFilterFromRequest` — the one call
+
+In the controller, apply the spec to a Lucid query straight from the `HttpContext`. It sources the input from `ctx.request.qs()`, injects the server scope (tenant + default filters) *before* the allow-listed request filters, applies the default sort when the request has none, and returns the resolved offset pagination.
+
+```ts title="app/controllers/users_controller.ts"
+import type { HttpContext } from '@adonisjs/core/http'
+import { applyFilterFromRequest } from '@adonis-agora/filter'
+import { userFilter } from '#filters/user_filter'
+import User from '#models/user'
+
+export default class UsersController {
+  async index(ctx: HttpContext) {
+    const query = User.query()
+    const { page, size } = applyFilterFromRequest(query, userFilter, ctx)
+    return query.paginate(page, size)
+  }
+}
+```
+
+This single call is the idiomatic replacement for the NestJS `ApplyFilterInterceptor` + `@ApplyFilter()` param decorator.
+
+<Callout type="warn" title="Tenant scope is un-tamperable">
+The tenant constraint and `defaultFilters` are applied as trusted server policy — they bypass the allow-list on purpose. A client that sends `?filter[tenantId]=999` cannot override the resolved tenant: `tenantId` isn't in `filterable`, so the client filter is dropped, while the server's `where('tenantId', 42)` still lands.
+</Callout>
+
+The tenant scope is **opt-in per request**: when `resolve(ctx)` returns `null`/`undefined` (no tenant in context), scoping is simply skipped.
+
+---
+
+## Under the hood
+
+`applyFilterFromRequest` is a thin wrapper. If you need to reuse the spec against a hand-built input (a non-HTTP caller, a test), the pieces are exported:
+
+<Steps>
+<Step>
+`specToFilterConfig(spec)` projects a `FilterSpec` onto the per-call `FilterConfig` the runner consumes (the allow-lists become predicates so relation-path + depth rules survive; `defaultSort` fields are unioned into the sortable predicate so a default ordering is never dropped).
+</Step>
+<Step>
+Pass a pre-parsed input via `options.input` to skip reading `ctx.request.qs()`.
+</Step>
+<Step>
+For keyset (cursor) pagination, use the sibling [`applyCursorFromRequest`](/docs/filter/pagination) — same spec, same server scope, cursor params instead of `page`/`size`.
+</Step>
+</Steps>
+
+```ts
+import { applyFilterFromRequest } from '@adonis-agora/filter'
+
+// Non-HTTP / test caller — supply the input directly:
+applyFilterFromRequest(query, userFilter, ctx, {
+  input: { filters: [{ field: 'status', operator: 'equals', value: 'active' }] },
+})
+```

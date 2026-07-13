@@ -5,7 +5,7 @@ description: Applying filters to Lucid models and query builders — the QueryBu
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`@agora/filter` applies to **any Lucid query builder** — model queries (`User.query()`), database queries (`db.from('users')`), and the relation sub-queries inside `preload`/`whereHas` callbacks. It never imports Lucid directly; it targets a small structural interface, `QueryBuilderLike`, that every Lucid builder already satisfies.
+`@adonis-agora/filter` applies to **any Lucid query builder** — model queries (`User.query()`), database queries (`db.from('users')`), and the relation sub-queries inside `preload`/`whereHas` callbacks. It never imports Lucid directly; it targets a small structural interface, `QueryBuilderLike`, that every Lucid builder already satisfies.
 
 ---
 
@@ -45,7 +45,7 @@ Because the binding is structural rather than a hard dependency, the adapter sta
 The high-level entry point. It validates and allow-list-prunes the input, applies filters → search → sort, and returns resolved pagination:
 
 ```ts
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import User from '#models/user'
 
 const input = parseFilterRequest(request.qs())
@@ -68,7 +68,7 @@ See [Filter Classes](/docs/filter/guides/filter-classes) for every `FilterConfig
 When you need a single stage applied to an arbitrary builder — typically inside a `whereHas`/`preload` callback — three functions are exported. They take **already-validated, already-pruned** `ColumnFilter[]` / `SortItem[]` and apply them with no allow-listing or pagination:
 
 ```ts
-import { applyColumnFilters, applySort, applySearch } from '@agora/filter'
+import { applyColumnFilters, applySort, applySearch } from '@adonis-agora/filter'
 
 applyColumnFilters(qb, [
   { field: 'status', operator: 'equals', value: 'active' },
@@ -132,7 +132,7 @@ The same functions work on a raw Lucid database query — it satisfies `QueryBui
 
 ```ts
 import db from '@adonisjs/lucid/services/db'
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 
 const input = parseFilterRequest(request.qs())
 const query = db.from('users')

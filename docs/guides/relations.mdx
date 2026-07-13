@@ -5,7 +5,7 @@ description: Filtering across Lucid relationships — preloading filtered relati
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`@agora/filter` drives a Lucid query builder through a structural interface (`QueryBuilderLike`). It does not invent its own join machinery — instead it composes with Lucid's relationship APIs (`preload`, `whereHas`, `withCount`). This guide shows the two ways relations show up in a filtered endpoint: **filtering the related rows you load**, and **filtering the parent rows by a relation**.
+`@adonis-agora/filter` drives a Lucid query builder through a structural interface (`QueryBuilderLike`). It does not invent its own join machinery — instead it composes with Lucid's relationship APIs (`preload`, `whereHas`, `withCount`). This guide shows the two ways relations show up in a filtered endpoint: **filtering the related rows you load**, and **filtering the parent rows by a relation**.
 
 <Callout type="info">
 The structural adapter means anything that satisfies `QueryBuilderLike` — a model query, a relation sub-query inside a `whereHas`/`preload` callback — can be handed to `applyFilter` (or to the lower-level `applyColumnFilters` / `applySort` / `applySearch`). Relations are just nested query builders.
@@ -18,7 +18,7 @@ The structural adapter means anything that satisfies `QueryBuilderLike` — a mo
 `preload`'s callback receives a relation query builder, which is `QueryBuilderLike`. Run a separate parsed input through it to filter the related rows you eager-load — without touching which parents come back:
 
 ```ts title="app/controllers/users_controller.ts"
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import User from '#models/user'
 
 async index({ request }: HttpContext) {
@@ -63,10 +63,10 @@ const query = User.query().whereHas('posts', (postsQuery) => {
 // → users having at least one post WHERE status = 'published' AND title ILIKE '%release%'
 ```
 
-`applyColumnFilters`, `applySort`, and `applySearch` are exported from `@agora/filter` for exactly this — applying a piece of the filter pipeline to an arbitrary sub-builder without the allow-list/pagination wrapper.
+`applyColumnFilters`, `applySort`, and `applySearch` are exported from `@adonis-agora/filter` for exactly this — applying a piece of the filter pipeline to an arbitrary sub-builder without the allow-list/pagination wrapper.
 
 ```ts
-import { applyColumnFilters, applySearch, applySort } from '@agora/filter'
+import { applyColumnFilters, applySearch, applySort } from '@adonis-agora/filter'
 ```
 
 <Callout type="info">
@@ -75,27 +75,23 @@ These low-level functions do **not** allow-list. When you feed them client-deriv
 
 ---
 
-## Dotted field names
+## Dotted field names are relation paths
 
-Field names may contain dots — `validateColumnFilter` accepts `^[a-zA-Z_][a-zA-Z0-9_.]*$`. A dotted field like `author.name` passes validation and is forwarded verbatim to Lucid as the column reference:
+Field names may contain dots — `validateColumnFilter` accepts `^[a-zA-Z_][a-zA-Z0-9_.]*$`. A dotted field like `author.name` is a **relation path**: every segment but the last is a relation hop, and the adapter translates it into a nested Lucid `whereHas` subquery (the final segment is the bare column the operator lands on inside it):
 
 ```ts
 applyFilter(query, input, { allowed: ['author.name', 'status'] })
-// ?filter[author.name]=Al  →  where('author.name', 'Al')
+// ?filter[author.name]=Al  →  whereHas('author', (q) => q.where('name', 'Al'))
 ```
 
-This is useful when you have already **joined** the relation onto the query (so `author.name` is a real column in scope):
+So you do **not** need to join the relation yourself — Lucid builds the subquery. Deeper paths nest `whereHas` within `whereHas` (`posts.comments.body` → `whereHas('posts', q => q.whereHas('comments', c => c.where('body', …)))`).
 
-```ts
-const query = User.query()
-  .join('authors', 'users.author_id', 'authors.id')
-  .select('users.*')
+<Callout type="info">
+The declarative way to whitelist relation paths (with a depth cap) is a `defineFilter` spec's `relations` map — see [Relation Filtering](/docs/filter/definitions/relations). With a raw `FilterConfig` you allow-list the dotted path by name (`allowed: ['author.name']`) as above.
+</Callout>
 
-applyFilter(query, input, { allowed: ['authors.name', 'status'] })
-```
-
-<Callout type="warn">
-A dotted field is a plain column reference — `@agora/filter` does **not** auto-create the join. If the relation isn't joined, the column won't resolve. For unjoined relations, prefer the `whereHas`/`preload` callback approach above, where Lucid manages the join for you. Remember to add the dotted name to `allowed` either way.
+<Callout type="warn" title="whereHas, not a joined column">
+Because a dotted filter becomes a `whereHas` subquery, the relation does **not** need to be joined for filtering. If you have genuinely joined a relation and want to reference its column directly (a real `where('authors.name', …)` on the joined table) rather than a subquery, filter on a non-dotted alias you select for it, or use the low-level `applyColumnFilters` on the joined builder.
 </Callout>
 
 ---

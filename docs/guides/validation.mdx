@@ -5,7 +5,7 @@ description: Built-in structural validation of column filters, the InvalidColumn
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Validation in `@agora/filter` happens at two levels: the library's own **structural validation** (always on, runs inside `applyFilter`), and your **application validation** (optional, VineJS — for type coercion and business rules). This guide covers both.
+Validation in `@adonis-agora/filter` happens at two levels: the library's own **structural validation** (always on, runs inside `applyFilter`), and your **application validation** (optional, VineJS — for type coercion and business rules). This guide covers both.
 
 ---
 
@@ -26,7 +26,7 @@ Every time `applyFilter` is given filters, it runs `validateColumnFilters` befor
 Each failure throws `InvalidColumnFilterError` with a descriptive message.
 
 ```ts
-import { validateColumnFilters, InvalidColumnFilterError } from '@agora/filter'
+import { validateColumnFilters, InvalidColumnFilterError } from '@adonis-agora/filter'
 
 try {
   validateColumnFilters([{ field: 'name', operator: 'banana', value: 'x' }])
@@ -48,7 +48,7 @@ try {
 Structural validation guards the *shape*; the [allow-list](/docs/filter/guides/filter-classes) guards *which columns*. By default a disallowed field is dropped silently. Set `throwOnInvalid: true` to reject the request instead:
 
 ```ts
-import { applyFilter, InvalidColumnFilterError } from '@agora/filter'
+import { applyFilter, InvalidColumnFilterError } from '@adonis-agora/filter'
 
 try {
   applyFilter(query, input, { allowed: ['name'], throwOnInvalid: true })
@@ -67,7 +67,7 @@ In an AdonisJS controller, map `InvalidColumnFilterError` to a `400`:
 
 ```ts title="app/controllers/users_controller.ts"
 import type { HttpContext } from '@adonisjs/core/http'
-import { parseFilterRequest, applyFilter, InvalidColumnFilterError } from '@agora/filter'
+import { parseFilterRequest, applyFilter, InvalidColumnFilterError } from '@adonis-agora/filter'
 import User from '#models/user'
 
 async index({ request, response }: HttpContext) {
@@ -92,7 +92,7 @@ async index({ request, response }: HttpContext) {
 To handle it app-wide, add a branch in `app/exceptions/handler.ts`:
 
 ```ts title="app/exceptions/handler.ts"
-import { InvalidColumnFilterError } from '@agora/filter'
+import { InvalidColumnFilterError } from '@adonis-agora/filter'
 
 async handle(error: unknown, ctx: HttpContext) {
   if (error instanceof InvalidColumnFilterError) {
@@ -133,7 +133,7 @@ export const listUsersValidator = vine.compile(
 ```
 
 ```ts title="app/controllers/users_controller.ts"
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import { listUsersValidator } from '#validators/list_users'
 import User from '#models/user'
 
@@ -150,8 +150,8 @@ async index({ request }: HttpContext) {
 }
 ```
 
-VineJS coerces `age.gte` to a real number and rejects out-of-range values with its standard `422` response; `@agora/filter` then handles operator dispatch and allow-listing. The two layers are complementary — VineJS owns *value* correctness, the allow-list owns *column* exposure.
+VineJS coerces `age.gte` to a real number and rejects out-of-range values with its standard `422` response; `@adonis-agora/filter` then handles operator dispatch and allow-listing. The two layers are complementary — VineJS owns *value* correctness, the allow-list owns *column* exposure.
 
 <Callout type="info">
-VineJS is optional. Without it, `@agora/filter` still parses, structurally validates, and allow-lists — values just stay as strings, which SQL comparison tolerates. Reach for VineJS when you need coercion, enums, or per-field bounds.
+VineJS is optional. Without it, `@adonis-agora/filter` still parses, structurally validates, and allow-lists — values just stay as strings, which SQL comparison tolerates. Reach for VineJS when you need coercion, enums, or per-field bounds.
 </Callout>

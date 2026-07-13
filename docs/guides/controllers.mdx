@@ -14,7 +14,7 @@ The whole server-side surface is two function calls: `parseFilterRequest(request
 
 ```ts title="app/controllers/users_controller.ts"
 import type { HttpContext } from '@adonisjs/core/http'
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import User from '#models/user'
 
 export default class UsersController {
@@ -78,8 +78,8 @@ Most list endpoints are identical apart from the model and the config. Factor th
 
 ```ts title="app/filters/list.ts"
 import type { HttpContext } from '@adonisjs/core/http'
-import { parseFilterRequest, applyFilter, type FilterConfig } from '@agora/filter'
-import type { QueryBuilderLike } from '@agora/filter'
+import { parseFilterRequest, applyFilter, type FilterConfig } from '@adonis-agora/filter'
+import type { QueryBuilderLike } from '@adonis-agora/filter'
 
 export function list(
   ctx: HttpContext,
@@ -147,7 +147,7 @@ Forced constraints belong on the query **before** `applyFilter`, and the column 
 Pass `throwOnInvalid: true` to reject queries that reference disallowed fields instead of silently dropping them, and map the error to a `400`:
 
 ```ts
-import { InvalidColumnFilterError } from '@agora/filter'
+import { InvalidColumnFilterError } from '@adonis-agora/filter'
 
 async index({ request, response }: HttpContext) {
   const input = parseFilterRequest(request.qs())

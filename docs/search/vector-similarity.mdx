@@ -1,0 +1,100 @@
+---
+title: Vector Similarity
+description: pgvector embedding-similarity ordering — rank rows nearest-first by distance between a stored embedding column and a query embedding, with a configurable metric, max-distance threshold, and top-K truncation.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**Vector similarity** ranks rows by how close their stored embedding is to a query **embedding vector**, using pgvector's distance operators. This is semantic / nearest-neighbor ranking — the input is a numeric vector (typically produced by an embedding model), not text.
+
+<Callout type="warn" title="This is not full-text search">
+Vector similarity ranks by **embedding distance**; it does not match keywords. If you want to match a user's *text query*, use [Full-Text Search](/docs/filter/search/full-text) instead. The two are additive — you can filter by keywords and rank by embedding in the same query.
+</Callout>
+
+---
+
+## Config — declare the embedding column
+
+Add `vectorSimilarity` to a `defineFilter` spec (or a raw `FilterConfig`). It is **additive and opt-in**: a spec that declares it behaves exactly as before *until* a request also carries a query embedding.
+
+```ts
+import { defineFilter } from '@adonis-agora/filter'
+
+export const docFilter = defineFilter({
+  filterable: ['status', 'authorId'],
+  vectorSimilarity: {
+    column: 'embedding',   // a pgvector column
+    metric: 'cosine',      // 'cosine' (default) | 'l2' | 'innerProduct'
+    threshold: 0.25,       // optional: drop rows farther than this
+    topK: 20,              // optional: keep only the K nearest
+  },
+})
+```
+
+### Options (`VectorSimilarityConfig`)
+
+| Option | What it does |
+|---|---|
+| `column` | The pgvector column ranked against the query embedding. |
+| `metric` | Distance metric → pgvector operator. `'cosine'` → `<=>` (default), `'l2'` → `<->`, `'innerProduct'` → `<#>`. All are *distance* operators (smaller = more similar), so nearest-first is always ascending. |
+| `threshold` | Keep only rows whose distance is strictly below this value (`WHERE embedding <=> ? < threshold`). |
+| `topK` | Truncate to the K nearest rows (`LIMIT`). |
+
+---
+
+## Supplying the query embedding
+
+The query embedding is **not** shipped through the query string (a large float array doesn't belong in a URL). The idiomatic path: the controller computes it from an embedding service and passes it to `applyFilterFromRequest`:
+
+```ts title="app/controllers/docs_controller.ts"
+import { applyFilterFromRequest } from '@adonis-agora/filter'
+import { docFilter } from '#filters/doc_filter'
+import Doc from '#models/doc'
+
+async search(ctx: HttpContext) {
+  const { q } = ctx.request.qs()
+  const embedding = await embeddingService.embed(q) // number[]
+
+  const query = Doc.query()
+  const { page, size } = applyFilterFromRequest(query, docFilter, ctx, {
+    vectorSimilarity: embedding, // merged into the input
+  })
+  return query.paginate(page, size)
+}
+```
+
+Similarity ranking is applied **before** the user sort, so nearest-first distance is the primary ordering and any allowed `sort` acts as a tiebreaker. It runs only when the policy declares a `vectorSimilarity` column **and** the request carries a non-empty embedding — otherwise the query is unchanged.
+
+---
+
+## The generated SQL
+
+For `column: 'embedding'`, `metric: 'cosine'`, with a threshold:
+
+```sql
+WHERE "embedding" <=> ?::vector < ?          -- bindings: ['[0.1,0.2,0.3]', 0.25]
+ORDER BY "embedding" <=> ?::vector asc        -- binding:  '[0.1,0.2,0.3]'
+```
+
+## Injection safety
+
+The query embedding always travels as a positional binding (cast `?::vector`); it is never interpolated. The column name is the only spliced fragment and is validated against a strict identifier charset. A non-finite component (`NaN`/`Infinity`) throws rather than emitting bad SQL, and an empty vector is a no-op.
+
+---
+
+## Direct use
+
+`applyVectorSimilarity` is exported for applying the ordering to an arbitrary builder outside the runner:
+
+```ts
+import { applyVectorSimilarity } from '@adonis-agora/filter'
+
+applyVectorSimilarity(query, {
+  column: 'embedding',
+  vector: embedding,        // number[]
+  metric: 'cosine',
+  threshold: 0.25,
+  topK: 20,
+  // order: false → apply only the threshold filter, leave ordering untouched
+})
+```

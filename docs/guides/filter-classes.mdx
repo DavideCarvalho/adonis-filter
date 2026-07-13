@@ -5,10 +5,10 @@ description: The FilterConfig policy — allow-listing filterable, sortable, and
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-`@agora/filter` has no filter *classes* — there are no decorators and no base class to extend. The declarative surface is a single plain object, the **`FilterConfig`**, passed as the third argument to `applyFilter`. It is the policy for one endpoint: which columns are filterable, sortable, and searchable, and how pagination is bounded.
+`@adonis-agora/filter` has no filter *classes* — there are no decorators and no base class to extend. The declarative surface is a single plain object, the **`FilterConfig`**, passed as the third argument to `applyFilter`. It is the policy for one endpoint: which columns are filterable, sortable, and searchable, and how pagination is bounded.
 
 ```ts
-import { applyFilter } from '@agora/filter'
+import { applyFilter } from '@adonis-agora/filter'
 
 const { page, size } = applyFilter(query, input, {
   allowed: ['name', 'email', 'age', 'status'],
@@ -131,7 +131,7 @@ try {
 }
 ```
 
-This throws `InvalidColumnFilterError` (exported from `@agora/filter`) the moment a disallowed filter or sort field is encountered. See [Validation](/docs/filter/guides/validation) for turning that into a clean HTTP response.
+This throws `InvalidColumnFilterError` (exported from `@adonis-agora/filter`) the moment a disallowed filter or sort field is encountered. See [Validation](/docs/filter/guides/validation) for turning that into a clean HTTP response.
 
 ---
 
@@ -140,7 +140,7 @@ This throws `InvalidColumnFilterError` (exported from `@agora/filter`) the momen
 Keep the policy beside the model so every controller that lists it shares one source of truth:
 
 ```ts title="app/filters/user_filter.ts"
-import type { FilterConfig } from '@agora/filter'
+import type { FilterConfig } from '@adonis-agora/filter'
 
 export const userFilterConfig: FilterConfig = {
   allowed: ['name', 'email', 'age', 'status'],
@@ -151,7 +151,7 @@ export const userFilterConfig: FilterConfig = {
 ```
 
 ```ts title="app/controllers/users_controller.ts"
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import { userFilterConfig } from '#filters/user_filter'
 import User from '#models/user'
 

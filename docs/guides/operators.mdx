@@ -18,7 +18,7 @@ interface ColumnFilter {
 }
 ```
 
-The operator list is exported as `FILTER_OPERATORS` and the alias map as `OPERATOR_ALIASES` from `@agora/filter`.
+The operator list is exported as `FILTER_OPERATORS` and the alias map as `OPERATOR_ALIASES` from `@adonis-agora/filter`.
 
 ---
 
@@ -99,7 +99,7 @@ The six scalar comparison operators accept their familiar SQL symbols. Aliases a
 | `<=` | `lte` |
 
 ```ts
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 
 // A client sending `?filter[age][>=]=18` parses to operator '>=',
 // which applyFilter normalizes to 'gte' before building the query.
@@ -108,7 +108,7 @@ import { parseFilterRequest, applyFilter } from '@agora/filter'
 If you need the canonical form programmatically, `normalizeOperator()` is exported:
 
 ```ts
-import { normalizeOperator } from '@agora/filter'
+import { normalizeOperator } from '@adonis-agora/filter'
 
 normalizeOperator('=')         // 'equals'
 normalizeOperator('<>')        // 'notEquals'
@@ -205,7 +205,7 @@ A `ColumnFilter` can be a pure group — an empty `field` plus an `AND`/`OR` arr
 ```
 
 <Callout type="info">
-Nesting is capped at `MAX_FILTER_DEPTH` (10) to prevent stack-overflow from maliciously deep payloads. Exceeding it throws `InvalidColumnFilterError`. The constant is exported from `@agora/filter`.
+Nesting is capped at `MAX_FILTER_DEPTH` (10) to prevent stack-overflow from maliciously deep payloads. Exceeding it throws `InvalidColumnFilterError`. The constant is exported from `@adonis-agora/filter`.
 </Callout>
 
 ---
@@ -218,7 +218,7 @@ Nesting is capped at `MAX_FILTER_DEPTH` (10) to prevent stack-overflow from mali
 - **LIKE escaping.** All string operators escape `%`, `_`, and `\` via `escapeLike()` before building the pattern, so user input can't inject wildcards.
 
 ```ts
-import { escapeLike } from '@agora/filter'
+import { escapeLike } from '@adonis-agora/filter'
 
 escapeLike('50%_off') // '50\\%\\_off'
 ```

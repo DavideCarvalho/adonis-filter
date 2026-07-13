@@ -3,7 +3,12 @@
   "pages": [
     "index",
     "getting-started",
-    "guides"
+    "guides",
+    "definitions",
+    "pagination",
+    "search",
+    "codegen",
+    "testing"
   ],
   "root": true,
   "description": "A typed query-filter language for AdonisJS — Spatie/JSON:API input, a Lucid adapter, field allow-listing, and a typed client builder.",

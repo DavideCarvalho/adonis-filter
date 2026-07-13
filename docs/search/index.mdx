@@ -1,0 +1,40 @@
+---
+title: Search
+description: Three search modes — portable ILIKE (default), Postgres tsvector full-text search (keyword matching), and pgvector embedding-similarity ordering. What each does and when to reach for it.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+The library ships **three** search modes. They are distinct mechanisms — pick by what you're matching.
+
+| Mode | Input | Matches | Config |
+|---|---|---|---|
+| **ILIKE** (default) | a text term | substring across `searchable` columns | `searchable: [...]` |
+| **Full-text search** | a text term | keyword/lexeme match against a tsvector document | `fullText: {...}` |
+| **Vector similarity** | a query **embedding** | nearest rows by embedding distance | `vectorSimilarity: {...}` |
+
+<Callout type="warn" title="Full-text search ≠ vector similarity">
+These two are easy to confuse because pgvector calls its extension "vector" and the underlying NestJS reference called tsvector search `applyVectorSearch`. They are **not** the same:
+
+- **Full-text search** ([`applyFullTextSearch`](/docs/filter/search/full-text)) is **keyword search** — it matches a user's *text query string* against a Postgres tsvector document with `websearch_to_tsquery` / `@@`. Input: words.
+- **Vector similarity** ([`applyVectorSimilarity`](/docs/filter/search/vector-similarity)) is **embedding-similarity ordering** — it ranks rows by distance between a stored embedding column and a query *embedding vector* (pgvector `<=>`/`<->`/`<#>`). Input: a numeric vector.
+
+Keyword-in-text → full-text. Semantic "most similar to this embedding" → vector similarity. They are additive and can be combined (filter by keywords, rank by embedding).
+</Callout>
+
+---
+
+## The `search` term routing
+
+The request's free-text `search` term routes to **one** text path, decided by the policy:
+
+- Policy declares `fullText` → the term goes through **tsvector full-text search**.
+- Otherwise, if `searchable` is set → the term goes through the **portable ILIKE scan** (OR-combined across the columns).
+
+The ILIKE default is covered under [Filter Classes](/docs/filter/guides/filter-classes) and [Getting Started](/docs/filter/getting-started); the two advanced modes have their own pages:
+
+<Cards>
+  <Card title="Full-Text Search" href="/docs/filter/search/full-text" description="Postgres tsvector keyword search — websearch_to_tsquery, @@, and optional ts_rank relevance ordering." />
+  <Card title="Vector Similarity" href="/docs/filter/search/vector-similarity" description="pgvector embedding-similarity ordering — rank rows nearest-first to a query embedding, with metric / threshold / top-K." />
+</Cards>

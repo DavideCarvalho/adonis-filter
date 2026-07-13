@@ -15,7 +15,7 @@ A `QueryBuilderLike` is a small interface — implement a stand-in that records 
 
 ```ts title="tests/unit/user_filter.spec.ts"
 import { test } from '@japa/runner'
-import { applyFilter, type QueryBuilderLike } from '@agora/filter'
+import { applyFilter, type QueryBuilderLike } from '@adonis-agora/filter'
 
 interface Call { method: string; args: unknown[] }
 
@@ -81,7 +81,7 @@ test.group('UserFilter', () => {
 ```
 
 <Callout type="info">
-The library's own test suite uses exactly this pattern — a `MockQueryBuilder` recorder with a `flatten()` that collects every leaf call across nested AND/OR groups, so assertions don't care about the precise grouping depth. Copy it into your test helpers.
+You don't have to hand-roll this recorder — the same `MockQueryBuilder` (and a `makeMockQueryBuilder()` factory) ships under the `@adonis-agora/filter/testing` subpath, with `flatten()` / `find()` / `findAll()` helpers and support for relation `whereHas` subqueries and raw search/vector SQL. See [Testing Utilities](/docs/filter/testing) — the hand-rolled class above is shown only to make the interface explicit.
 </Callout>
 
 ---
@@ -144,7 +144,7 @@ test('clamps size to maxSize and floors page to 1', ({ assert }) => {
 `parseFilterRequest` is pure — feed it a decoded query object and assert the structured output:
 
 ```ts
-import { parseFilterRequest } from '@agora/filter'
+import { parseFilterRequest } from '@adonis-agora/filter'
 
 test('parses bracket-notation operators and sort', ({ assert }) => {
   const input = parseFilterRequest({

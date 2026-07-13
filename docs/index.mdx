@@ -8,13 +8,13 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
-**`@agora/filter`** turns messy `?filter[name]=Al&filter[age][gte]=18` query strings into safe, validated Lucid queries. You parse the request into a structured input, then apply it to any Lucid query builder under a **field allow-list** — the allow-list is the security boundary, so client input can never probe arbitrary columns. The library does the rest: operator dispatch, AND/OR composition, ILIKE search, sorting, and offset pagination resolution.
+**`@adonis-agora/filter`** turns messy `?filter[name]=Al&filter[age][gte]=18` query strings into safe, validated Lucid queries. You parse the request into a structured input, then apply it to any Lucid query builder under a **field allow-list** — the allow-list is the security boundary, so client input can never probe arbitrary columns. The library does the rest: operator dispatch, AND/OR composition, ILIKE search, sorting, and offset pagination resolution.
 
 The wire format is the [Spatie](https://spatie.be/docs/laravel-query-builder) / JSON:API convention (`filter[field][op]=value`, `sort=-createdAt`, `page`/`size`), so the companion **`@agora/filter-client`** builder produces exactly what the server parses — fully type-safe, framework-agnostic, with optional TanStack Table state sync.
 
 ## The problem it solves
 
-List endpoints accumulate filtering logic fast. Without a structure, every controller grows a tangle of `if (qs.name) { query.where(...) }` branches, ad-hoc operator handling, and string concatenation that invites injection bugs. `@agora/filter` replaces that with two pure functions and a policy object:
+List endpoints accumulate filtering logic fast. Without a structure, every controller grows a tangle of `if (qs.name) { query.where(...) }` branches, ad-hoc operator handling, and string concatenation that invites injection bugs. `@adonis-agora/filter` replaces that with two pure functions and a policy object:
 
 - **Parse once, apply once.** `parseFilterRequest()` reshapes the request; `applyFilter()` validates it, prunes it against the allow-list, and mutates your Lucid query in place.
 - **The allow-list is the contract.** `allowed`, `sortable`, and `searchable` decide what is queryable. Anything else is dropped (or rejected with `throwOnInvalid`). No accidental exposure of internal columns.
@@ -31,7 +31,7 @@ The whole loop — install, parse, apply, paginate — in three steps. For the f
 Install the server package:
 
 ```bash
-node ace add @agora/filter
+node ace add @adonis-agora/filter
 ```
 
 </Step>
@@ -41,7 +41,7 @@ Parse the request and apply it to a Lucid query under an allow-list:
 
 ```ts title="app/controllers/users_controller.ts"
 import type { HttpContext } from '@adonisjs/core/http'
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 import User from '#models/user'
 
 export default class UsersController {
@@ -117,4 +117,8 @@ A parsed `FilterInput` combines five concerns in one request — column filters 
   <Card title="Lucid Integration" href="/docs/filter/guides/lucid" description="Applying filters to Lucid models and query builders, pagination, and the QueryBuilderLike contract." />
   <Card title="Client Builder" href="/docs/filter/guides/client" description="@agora/filter-client — the typed query builder, reactivity, and TanStack Table sync." />
   <Card title="Testing" href="/docs/filter/guides/testing" description="Unit-testing filters with a recording mock query builder, end-to-end tests with Japa." />
+  <Card title="Defining Filters" href="/docs/filter/definitions" description="defineFilter + applyFilterFromRequest — a reusable definition with relations, tenant scope, and defaults." />
+  <Card title="Cursor Pagination" href="/docs/filter/pagination" description="Keyset pagination — stable, seek-based pages with opaque forward/backward cursors." />
+  <Card title="Search" href="/docs/filter/search" description="ILIKE, Postgres tsvector full-text search, and pgvector embedding-similarity ordering." />
+  <Card title="Client Codegen" href="/docs/filter/codegen" description="Generate a typed client from a spec with generateFilterClient + make:filter-client." />
 </Cards>
