@@ -75,13 +75,14 @@ const VECTOR_OPERATORS: Record<VectorDistanceMetric, string> = {
 };
 
 /**
- * Options for {@link applyVectorSearch} — a pgvector similarity search against a
- * `vector` column. Modeled on the NestJS adapter's `applyVectorSearch` seam, but
- * specialized for embedding similarity: a query embedding is ranked against the
+ * Options for {@link applyVectorSimilarity} — an **embedding similarity** ordering
+ * (pgvector) against a `vector` column. This is DISTINCT from full-text search
+ * ({@link applyFullTextSearch}): here a query *embedding* is ranked against the
  * column by a distance metric, optionally filtered by a distance threshold and
- * truncated to the top-K nearest rows.
+ * truncated to the top-K nearest rows. (Full-text search matches a text *query
+ * string* against a tsvector document.)
  */
-export interface VectorSearchOptions {
+export interface VectorSimilarityOptions {
   /** The pgvector column to compare the query embedding against (e.g. `'embedding'`). */
   column: string;
   /** The query embedding — the vector rows are ranked by similarity to. */
@@ -132,7 +133,11 @@ function serializeVector(vector: readonly number[]): string | null {
 }
 
 /**
- * Apply a pgvector similarity search to a Lucid query builder.
+ * Apply an **embedding similarity** ordering (pgvector) to a Lucid query builder.
+ *
+ * This is *not* full-text search — it ranks rows by distance between a stored
+ * embedding column and a query *embedding vector*. For matching a text query
+ * string, use {@link applyFullTextSearch} instead.
  *
  * pgvector expresses similarity through raw distance operators (`<=>`, `<->`,
  * `<#>`) that no structured query-builder method covers, so this drives the
@@ -147,7 +152,7 @@ function serializeVector(vector: readonly number[]): string | null {
  * ordered nearest-first (ascending distance); `threshold` adds a max-distance
  * filter; `topK` truncates to the K nearest.
  */
-export function applyVectorSearch(qb: QueryBuilderLike, opts: VectorSearchOptions): void {
+export function applyVectorSimilarity(qb: QueryBuilderLike, opts: VectorSimilarityOptions): void {
   const literal = serializeVector(opts.vector);
   if (literal === null) return;
   if (!SAFE_IDENTIFIER.test(opts.column)) {
@@ -165,6 +170,112 @@ export function applyVectorSearch(qb: QueryBuilderLike, opts: VectorSearchOption
   }
   if (opts.topK !== undefined) {
     qb.limit(opts.topK);
+  }
+}
+
+/**
+ * Options for {@link applyFullTextSearch} — a Postgres **tsvector full-text
+ * search** (the parity behavior of the NestJS reference's `applyVectorSearch`).
+ * The user query string is matched against a text-search document with
+ * `websearch_to_tsquery` and the `@@` operator, optionally ranked by `ts_rank`.
+ *
+ * This is DISTINCT from {@link VectorSimilarityOptions} (embedding similarity):
+ * here the input is arbitrary *text*, tokenized by a language config; there the
+ * input is a numeric *embedding vector*.
+ */
+export interface FullTextSearchOptions {
+  /**
+   * The user's raw search text. Always passed as a positional binding to
+   * `websearch_to_tsquery` — never interpolated into SQL. A no-op when blank.
+   */
+  query: string;
+  /**
+   * The document to match against. Either a single precomputed `tsvector`
+   * column (matched directly with `@@`), or one-or-more plain text columns that
+   * are wrapped in `to_tsvector(<language>, ...)` at query time (see
+   * {@link FullTextSearchOptions.columnKind}). Passing multiple columns implies
+   * `'text'`.
+   */
+  column: string | readonly string[];
+  /**
+   * Postgres text-search config / language used for both `websearch_to_tsquery`
+   * and any `to_tsvector` wrapping (e.g. `'english'`, `'simple'`). Default
+   * `'english'`. Validated against the strict identifier charset before it is
+   * spliced into SQL.
+   */
+  language?: string;
+  /**
+   * Add relevance ordering for matched rows (`ORDER BY ts_rank(...) DESC`). Off
+   * by default because it changes the query's default ordering; opt in for
+   * best-match-first results.
+   */
+  rank?: boolean;
+  /**
+   * How {@link FullTextSearchOptions.column} is treated:
+   * - `'tsvector'` — a precomputed `tsvector` column, matched directly (`col @@ ...`);
+   * - `'text'` — plain text column(s), wrapped in `to_tsvector(<language>, col ...)`.
+   *
+   * Defaults to `'tsvector'` for a single column and `'text'` when multiple
+   * columns are given.
+   */
+  columnKind?: 'tsvector' | 'text';
+}
+
+/**
+ * Apply a Postgres **tsvector full-text search** to a Lucid query builder — the
+ * parity port of the NestJS reference's `applyVectorSearch` (tsvector), NOT the
+ * embedding similarity {@link applyVectorSimilarity}.
+ *
+ * Injection-safety: the user `query` string ALWAYS travels as a positional
+ * binding (`websearch_to_tsquery('<lang>', ?)`); it is never interpolated.
+ * `websearch_to_tsquery` (not the raw `to_tsquery`) parses arbitrary user input
+ * — multi-word text, `"quoted phrases"`, `-exclude`, `or` — without throwing a
+ * syntax error. The only spliced fragments are the column name(s) and the
+ * language config, each validated against the strict identifier charset
+ * ({@link SAFE_IDENTIFIER}) before use, so neither can carry injection.
+ *
+ * The match predicate is `<document> @@ websearch_to_tsquery('<lang>', ?)` where
+ * `<document>` is either the tsvector column directly, or
+ * `to_tsvector('<lang>', coalesce(col1,'') || ' ' || coalesce(col2,''))` for
+ * text columns. When `rank` is set, rows are additionally ordered by descending
+ * `ts_rank(<document>, websearch_to_tsquery('<lang>', ?))`. A no-op for a blank
+ * query.
+ */
+export function applyFullTextSearch(qb: QueryBuilderLike, opts: FullTextSearchOptions): void {
+  const query = opts.query.trim();
+  if (query.length === 0) return;
+
+  const columns = Array.isArray(opts.column) ? opts.column : [opts.column as string];
+  if (columns.length === 0) return;
+  for (const col of columns) {
+    if (!SAFE_IDENTIFIER.test(col)) {
+      throw new TypeError(`Invalid full-text search column name: ${JSON.stringify(col)}`);
+    }
+  }
+
+  const language = opts.language ?? 'english';
+  if (!SAFE_IDENTIFIER.test(language)) {
+    throw new TypeError(`Invalid full-text search language: ${JSON.stringify(language)}`);
+  }
+
+  // The user query is a positional binding; only the validated language splices in.
+  const tsquery = `websearch_to_tsquery('${language}', ?)`;
+
+  // A precomputed tsvector column is matched directly; text columns are tokenized
+  // at query time via to_tsvector, coalescing NULLs so a null column can't null
+  // the whole document.
+  const kind = opts.columnKind ?? (columns.length > 1 ? 'text' : 'tsvector');
+  const document =
+    kind === 'text'
+      ? `to_tsvector('${language}', ${columns
+          .map((c) => `coalesce(${quoteColumn(c)}, '')`)
+          .join(" || ' ' || ")})`
+      : quoteColumn(columns[0]!);
+
+  qb.whereRaw(`${document} @@ ${tsquery}`, [query]);
+
+  if (opts.rank) {
+    qb.orderByRaw(`ts_rank(${document}, ${tsquery}) desc`, [query]);
   }
 }
 

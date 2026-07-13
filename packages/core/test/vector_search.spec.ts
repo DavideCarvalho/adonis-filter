@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { applyFilterFromRequest } from '../src/apply_from_request.js';
 import { defineFilter } from '../src/filter_spec.js';
-import { applyColumnFilters, applyVectorSearch } from '../src/lucid_adapter.js';
+import { applyColumnFilters, applyVectorSimilarity } from '../src/lucid_adapter.js';
 import { applyFilter } from '../src/runner.js';
 import { MockQueryBuilder } from './mock_query_builder.js';
 
-describe('lucid adapter — applyVectorSearch', () => {
+describe('lucid adapter — applyVectorSimilarity', () => {
   it('orders nearest-first with the cosine operator by default (embedding as a binding)', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [0.1, 0.2, 0.3] });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [0.1, 0.2, 0.3] });
 
     const order = qb.find('orderByRaw');
     expect(order?.args[0]).toBe('"embedding" <=> ?::vector asc');
@@ -21,19 +21,19 @@ describe('lucid adapter — applyVectorSearch', () => {
 
   it('selects the L2 operator for metric "l2"', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [1, 2], metric: 'l2' });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [1, 2], metric: 'l2' });
     expect(qb.find('orderByRaw')?.args[0]).toBe('"embedding" <-> ?::vector asc');
   });
 
   it('selects the inner-product operator for metric "innerProduct"', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [1, 2], metric: 'innerProduct' });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [1, 2], metric: 'innerProduct' });
     expect(qb.find('orderByRaw')?.args[0]).toBe('"embedding" <#> ?::vector asc');
   });
 
   it('applies a threshold as a max-distance whereRaw with two bindings', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [1, 2], threshold: 0.25 });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [1, 2], threshold: 0.25 });
     const where = qb.find('whereRaw');
     expect(where?.args[0]).toBe('"embedding" <=> ?::vector < ?');
     expect(where?.args[1]).toEqual(['[1,2]', 0.25]);
@@ -41,39 +41,39 @@ describe('lucid adapter — applyVectorSearch', () => {
 
   it('applies topK as a LIMIT', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [1, 2], topK: 5 });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [1, 2], topK: 5 });
     expect(qb.find('limit')?.args).toEqual([5]);
   });
 
   it('order:false applies only the threshold filter, no ordering', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [1, 2], threshold: 0.5, order: false });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [1, 2], threshold: 0.5, order: false });
     expect(qb.find('whereRaw')).toBeDefined();
     expect(qb.find('orderByRaw')).toBeUndefined();
   });
 
   it('quotes a table-qualified column per segment', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'docs.embedding', vector: [1] });
+    applyVectorSimilarity(qb, { column: 'docs.embedding', vector: [1] });
     expect(qb.find('orderByRaw')?.args[0]).toBe('"docs"."embedding" <=> ?::vector asc');
   });
 
   it('is a no-op for an empty embedding', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSearch(qb, { column: 'embedding', vector: [] });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [] });
     expect(qb.flatten()).toEqual([]);
   });
 
   it('rejects an unsafe column name', () => {
     const qb = new MockQueryBuilder();
     expect(() =>
-      applyVectorSearch(qb, { column: 'embedding; DROP TABLE users', vector: [1] }),
+      applyVectorSimilarity(qb, { column: 'embedding; DROP TABLE users', vector: [1] }),
     ).toThrow(/Invalid vector column/);
   });
 
   it('rejects a non-finite embedding component', () => {
     const qb = new MockQueryBuilder();
-    expect(() => applyVectorSearch(qb, { column: 'embedding', vector: [1, Number.NaN] })).toThrow(
+    expect(() => applyVectorSimilarity(qb, { column: 'embedding', vector: [1, Number.NaN] })).toThrow(
       /finite numbers/,
     );
   });
@@ -84,8 +84,11 @@ describe('runner — vector search integration', () => {
     const qb = new MockQueryBuilder();
     applyFilter(
       qb,
-      { filters: [{ field: 'status', operator: 'equals', value: 'published' }], vector: [1, 2, 3] },
-      { allowed: ['status'], vector: { column: 'embedding', topK: 10 } },
+      {
+        filters: [{ field: 'status', operator: 'equals', value: 'published' }],
+        vectorSimilarity: [1, 2, 3],
+      },
+      { allowed: ['status'], vectorSimilarity: { column: 'embedding', topK: 10 } },
     );
 
     // Normal filter still applied unchanged.
@@ -97,13 +100,13 @@ describe('runner — vector search integration', () => {
 
   it('does not apply vector search when the request carries no embedding', () => {
     const qb = new MockQueryBuilder();
-    applyFilter(qb, { filters: [] }, { allowed: '*', vector: { column: 'embedding' } });
+    applyFilter(qb, { filters: [] }, { allowed: '*', vectorSimilarity: { column: 'embedding' } });
     expect(qb.find('orderByRaw')).toBeUndefined();
   });
 
   it('does not apply vector search when the policy declares no vector column', () => {
     const qb = new MockQueryBuilder();
-    applyFilter(qb, { vector: [1, 2, 3] }, { allowed: '*' });
+    applyFilter(qb, { vectorSimilarity: [1, 2, 3] }, { allowed: '*' });
     expect(qb.find('orderByRaw')).toBeUndefined();
   });
 
@@ -111,8 +114,8 @@ describe('runner — vector search integration', () => {
     const qb = new MockQueryBuilder();
     applyFilter(
       qb,
-      { vector: [1, 2], sort: [{ field: 'createdAt', direction: 'desc' }] },
-      { allowed: ['createdAt'], vector: { column: 'embedding' } },
+      { vectorSimilarity: [1, 2], sort: [{ field: 'createdAt', direction: 'desc' }] },
+      { allowed: ['createdAt'], vectorSimilarity: { column: 'embedding' } },
     );
     const orders = qb.flatten().filter((c) => c.method === 'orderByRaw' || c.method === 'orderBy');
     expect(orders[0]?.method).toBe('orderByRaw');
@@ -124,12 +127,12 @@ describe('defineFilter / applyFilterFromRequest — vector search', () => {
   it('projects the spec vector config and injects the embedding from options', () => {
     const spec = defineFilter({
       filterable: ['status'],
-      vector: { column: 'embedding', metric: 'l2', threshold: 0.3, topK: 8 },
+      vectorSimilarity: { column: 'embedding', metric: 'l2', threshold: 0.3, topK: 8 },
     });
     const qb = new MockQueryBuilder();
     applyFilterFromRequest(qb, spec, undefined, {
       input: { filters: [] },
-      vector: [0.5, 0.6],
+      vectorSimilarity: [0.5, 0.6],
     });
 
     expect(qb.find('whereRaw')?.args).toEqual(['"embedding" <-> ?::vector < ?', ['[0.5,0.6]', 0.3]]);
@@ -148,12 +151,12 @@ describe('defineFilter / applyFilterFromRequest — vector search', () => {
   it('combines a vector search with a normal allow-listed filter from the spec', () => {
     const spec = defineFilter({
       filterable: ['status'],
-      vector: { column: 'embedding' },
+      vectorSimilarity: { column: 'embedding' },
     });
     const qb = new MockQueryBuilder();
     applyFilterFromRequest(qb, spec, undefined, {
       input: { filters: [{ field: 'status', operator: 'equals', value: 'active' }] },
-      vector: [9, 9],
+      vectorSimilarity: [9, 9],
     });
     // Structured filter preserved.
     expect(qb.flatten()).toContainEqual({ method: 'where', args: ['status', 'active'] });
@@ -168,7 +171,7 @@ describe('raw seam is mockable alongside structured filters', () => {
   it('records whereRaw/orderByRaw next to where translations', () => {
     const qb = new MockQueryBuilder();
     applyColumnFilters(qb, [{ field: 'name', operator: 'equals', value: 'Al' }]);
-    applyVectorSearch(qb, { column: 'embedding', vector: [1], threshold: 0.1 });
+    applyVectorSimilarity(qb, { column: 'embedding', vector: [1], threshold: 0.1 });
     const methods = qb.flatten().map((c) => c.method);
     expect(methods).toContain('where');
     expect(methods).toContain('whereRaw');

@@ -28,12 +28,13 @@ export interface ApplyFromRequestOptions {
    */
   input?: FilterInput;
   /**
-   * Query embedding for pgvector similarity ranking. The idiomatic path: the
-   * controller computes it from an embedding service and passes it here (rather
-   * than shipping a large float array through the query string). Ignored unless
-   * the spec declares a `vector` column; merged over any `input.vector`.
+   * Query embedding for pgvector embedding-similarity ranking (distinct from the
+   * text `search`). The idiomatic path: the controller computes it from an
+   * embedding service and passes it here (rather than shipping a large float
+   * array through the query string). Ignored unless the spec declares a
+   * `vectorSimilarity` column; merged over any `input.vectorSimilarity`.
    */
-  vector?: readonly number[];
+  vectorSimilarity?: readonly number[];
 }
 
 /** Options for {@link applyCursorFromRequest}. */
@@ -113,7 +114,9 @@ export function applyFilterFromRequest(
 ): ResolvedPagination {
   const parsed = options.input ?? parseFilterRequest(rawQs(ctx));
   const withVector =
-    options.vector !== undefined ? { ...parsed, vector: options.vector } : parsed;
+    options.vectorSimilarity !== undefined
+      ? { ...parsed, vectorSimilarity: options.vectorSimilarity }
+      : parsed;
   applyServerScope(query, spec, ctx);
   return applyFilter(query, withDefaultSort(withVector, spec), specToFilterConfig(spec));
 }

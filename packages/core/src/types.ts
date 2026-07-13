@@ -1,5 +1,5 @@
 import type { FieldAliases } from './field_aliases.js';
-import type { VectorDistanceMetric } from './lucid_adapter.js';
+import type { FullTextSearchOptions, VectorDistanceMetric } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
 
 /** A sort directive: field + direction. */
@@ -39,28 +39,44 @@ export interface FilterInput {
   filters?: ColumnFilter[];
   /** Sort directives, applied in order. */
   sort?: SortItem[];
-  /** Free-text search term, applied across the configured searchable columns. */
+  /**
+   * Free-text search term. Routed through Postgres tsvector full-text search
+   * when the policy declares {@link FilterConfig.fullText}, otherwise a portable
+   * ILIKE scan across {@link FilterConfig.searchable}.
+   */
   search?: string;
   /** 1-based page number for offset pagination. */
   page?: number;
   /** Page size for offset pagination. */
   size?: number;
   /**
-   * A query embedding to rank rows by pgvector similarity. Applied only when the
-   * policy declares a vector-searchable column (see {@link FilterConfig.vector}) —
-   * ignored otherwise, so non-vector requests are unchanged. Typically the
-   * controller computes this from an embedding service, not the query string.
+   * A query embedding to rank rows by pgvector *similarity* (distinct from the
+   * text `search` above). Applied only when the policy declares a similarity
+   * column (see {@link FilterConfig.vectorSimilarity}) — ignored otherwise, so
+   * non-similarity requests are unchanged. Typically the controller computes
+   * this from an embedding service, not the query string.
    */
-  vector?: readonly number[];
+  vectorSimilarity?: readonly number[];
 }
 
 /**
- * Declares a pgvector-searchable column on a policy. When a request also carries
- * a query embedding ({@link FilterInput.vector}), the runner ranks rows by
- * ascending distance to it. Additive — a policy without this behaves exactly as
- * before.
+ * Declares a Postgres tsvector full-text search on a policy — the primary
+ * `search` path when set. The request's `search` string is matched against the
+ * configured document via `websearch_to_tsquery`, optionally ranked by
+ * `ts_rank`. Omitting `column`-related fields is a compile error; a policy
+ * without this config falls back to the ILIKE {@link FilterConfig.searchable}
+ * scan. Additive — carries the same shape as {@link FullTextSearchOptions}
+ * minus the per-request `query`.
  */
-export interface VectorSearchConfig {
+export type FullTextSearchConfig = Omit<FullTextSearchOptions, 'query'>;
+
+/**
+ * Declares a pgvector **embedding similarity** ordering on a policy — distinct
+ * from full-text `search`. When a request also carries a query embedding
+ * ({@link FilterInput.vectorSimilarity}), the runner ranks rows by ascending
+ * distance to it. Additive — a policy without this behaves exactly as before.
+ */
+export interface VectorSimilarityConfig {
   /** The pgvector column ranked against the query embedding (e.g. `'embedding'`). */
   column: string;
   /** Distance metric → pgvector operator. Default `'cosine'` (`<=>`). */
@@ -93,8 +109,17 @@ export interface FilterConfig {
   allowed: AllowList;
   /** Columns clients may sort on. Defaults to {@link FilterConfig.allowed}. */
   sortable?: AllowList;
-  /** Columns the free-text `search` term scans (ILIKE). */
+  /**
+   * Columns the free-text `search` term scans with a portable ILIKE — the
+   * default search path when {@link FilterConfig.fullText} is not set.
+   */
   searchable?: string[];
+  /**
+   * Opt-in Postgres tsvector full-text search. When set, the request `search`
+   * string routes through `websearch_to_tsquery`/`@@` (and optional `ts_rank`)
+   * instead of the ILIKE {@link FilterConfig.searchable} scan. Omitted → ILIKE.
+   */
+  fullText?: FullTextSearchConfig;
   /** Default page size when none is given. Default 25. */
   defaultSize?: number;
   /** Hard cap on page size. Default 100. */
@@ -109,9 +134,10 @@ export interface FilterConfig {
    */
   aliases?: FieldAliases;
   /**
-   * Opt-in pgvector similarity search. When set and the request carries a query
-   * embedding ({@link FilterInput.vector}), rows are ranked nearest-first by
-   * distance to it. Omitted → no vector search (default).
+   * Opt-in pgvector embedding-similarity ordering (distinct from text `search`).
+   * When set and the request carries a query embedding
+   * ({@link FilterInput.vectorSimilarity}), rows are ranked nearest-first by
+   * distance to it. Omitted → no similarity ordering (default).
    */
-  vector?: VectorSearchConfig;
+  vectorSimilarity?: VectorSimilarityConfig;
 }

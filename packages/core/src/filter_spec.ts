@@ -1,6 +1,12 @@
 import type { FieldAliases } from './field_aliases.js';
 import type { ColumnFilter } from './operators.js';
-import type { AllowList, FilterConfig, SortItem, VectorSearchConfig } from './types.js';
+import type {
+  AllowList,
+  FilterConfig,
+  FullTextSearchConfig,
+  SortItem,
+  VectorSimilarityConfig,
+} from './types.js';
 
 /**
  * Thrown when a {@link defineFilter} declaration is itself invalid (a developer
@@ -60,8 +66,17 @@ export interface DefineFilterOptions {
   filterable: RelationColumns;
   /** Columns clients may sort on. Defaults to {@link DefineFilterOptions.filterable}. */
   sortable?: RelationColumns;
-  /** Columns the free-text `search` term scans (ILIKE). */
+  /**
+   * Columns the free-text `search` term scans with a portable ILIKE — the
+   * default search path when {@link DefineFilterOptions.fullText} is not set.
+   */
   searchable?: string[];
+  /**
+   * Opt-in Postgres tsvector full-text search. When set, the request `search`
+   * string routes through `websearch_to_tsquery`/`@@` (and optional `ts_rank`)
+   * instead of the ILIKE `searchable` scan. Column(s) + language + rank.
+   */
+  fullText?: FullTextSearchConfig;
   /** Whitelisted relations and their nested filterable/sortable columns. */
   relations?: Record<string, RelationSpec>;
   /**
@@ -74,11 +89,12 @@ export interface DefineFilterOptions {
   /** Client-alias → resolved-target field remapping (see {@link resolveFieldAlias}). */
   aliases?: FieldAliases;
   /**
-   * Opt-in pgvector similarity search: declares the vector column (and metric /
-   * threshold / top-K) rows are ranked by when a request carries a query
-   * embedding. Additive — a spec without this is unchanged.
+   * Opt-in pgvector embedding-similarity ordering (distinct from text `search`):
+   * declares the vector column (and metric / threshold / top-K) rows are ranked
+   * by when a request carries a query embedding. Additive — a spec without this
+   * is unchanged.
    */
-  vector?: VectorSearchConfig;
+  vectorSimilarity?: VectorSimilarityConfig;
   /** Opt-in tenant auto-scope read from ctx. */
   tenant?: TenantScopeSpec;
   /**
@@ -107,10 +123,11 @@ export interface FilterSpec {
   readonly filterable: RelationColumns;
   readonly sortable: RelationColumns;
   readonly searchable: readonly string[];
+  readonly fullText: FullTextSearchConfig | undefined;
   readonly relations: Readonly<Record<string, RelationSpec>>;
   readonly maxDepth: number;
   readonly aliases: FieldAliases | undefined;
-  readonly vector: VectorSearchConfig | undefined;
+  readonly vectorSimilarity: VectorSimilarityConfig | undefined;
   readonly tenant: TenantScopeSpec | undefined;
   readonly defaultFilters: readonly ColumnFilter[];
   readonly defaultSort: readonly SortItem[];
@@ -219,10 +236,11 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
     filterable,
     sortable,
     searchable: options.searchable ?? [],
+    fullText: options.fullText,
     relations,
     maxDepth,
     aliases: options.aliases,
-    vector: options.vector,
+    vectorSimilarity: options.vectorSimilarity,
     tenant: options.tenant,
     defaultFilters: options.defaultFilters ?? [],
     defaultSort: options.defaultSort ?? [],
@@ -256,8 +274,9 @@ export function specToFilterConfig(spec: FilterSpec): FilterConfig {
     allowed,
     sortable,
     ...(spec.searchable.length > 0 && { searchable: [...spec.searchable] }),
+    ...(spec.fullText && { fullText: spec.fullText }),
     ...(spec.aliases && { aliases: spec.aliases }),
-    ...(spec.vector && { vector: spec.vector }),
+    ...(spec.vectorSimilarity && { vectorSimilarity: spec.vectorSimilarity }),
     ...(spec.defaultSize !== undefined && { defaultSize: spec.defaultSize }),
     ...(spec.maxSize !== undefined && { maxSize: spec.maxSize }),
     throwOnInvalid: spec.throwOnInvalid,

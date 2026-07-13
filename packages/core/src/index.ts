@@ -21,10 +21,11 @@ export type {
   AllowList,
   FilterConfig,
   FilterInput,
+  FullTextSearchConfig,
   InputNormalizer,
   InputSource,
   SortItem,
-  VectorSearchConfig,
+  VectorSimilarityConfig,
 } from './types.js';
 export {
   defineFilter,
@@ -66,13 +67,15 @@ export { applyCursor, applyFilter } from './runner.js';
 export type { CursorConfig, ResolvedPagination } from './runner.js';
 export {
   applyColumnFilters,
+  applyFullTextSearch,
   applyKeyset,
   applySearch,
   applySort,
-  applyVectorSearch,
+  applyVectorSimilarity,
+  type FullTextSearchOptions,
   type QueryBuilderLike,
   type VectorDistanceMetric,
-  type VectorSearchOptions,
+  type VectorSimilarityOptions,
 } from './lucid_adapter.js';
 export {
   buildCursorPage,
