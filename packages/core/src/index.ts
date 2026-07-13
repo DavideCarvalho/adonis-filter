@@ -31,6 +31,20 @@ export {
   FilterDefinitionError,
   specToFilterConfig,
 } from './filter_spec.js';
+export {
+  filterableFieldPaths,
+  generateFilterClient,
+  generateFilterClients,
+  sortableFieldPaths,
+} from './generate_client.js';
+export type {
+  FilterClientEntry,
+  FilterClientManifest,
+  FilterFieldKind,
+  FilterFieldTypeInfo,
+  GeneratedFilterClient,
+  GenerateFilterClientOptions,
+} from './generate_client.js';
 export type {
   DefineFilterOptions,
   FilterSpec,

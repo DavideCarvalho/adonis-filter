@@ -22,6 +22,11 @@
       "types": "./dist/src/testing.d.ts",
       "import": "./dist/src/testing.js",
       "default": "./dist/src/testing.js"
+    },
+    "./commands": {
+      "types": "./dist/commands/main.d.ts",
+      "import": "./dist/commands/main.js",
+      "default": "./dist/commands/main.js"
     }
   },
   "files": ["dist/", "README.md", "CHANGELOG.md"],
@@ -32,7 +37,16 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "peerDependencies": {
+    "@adonisjs/core": "^7.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@adonisjs/core": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@adonisjs/core": "^7.3.0",
     "@types/node": "^20.0.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
