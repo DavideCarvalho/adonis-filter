@@ -17,13 +17,56 @@ export {
 } from './validate-column-filter.js';
 export { isOperatorObject, valueToColumnFilters } from './value-shape.js';
 export { escapeLike } from './escape-like.js';
-export type { FilterConfig, FilterInput, SortItem } from './types.js';
-export { parseFilterRequest } from './parse_request.js';
-export { applyFilter } from './runner.js';
-export type { ResolvedPagination } from './runner.js';
+export type {
+  AllowList,
+  FilterConfig,
+  FilterInput,
+  InputNormalizer,
+  InputSource,
+  SortItem,
+} from './types.js';
+export {
+  defineFilter,
+  FilterDefinitionError,
+  specToFilterConfig,
+} from './filter_spec.js';
+export type {
+  DefineFilterOptions,
+  FilterSpec,
+  RelationColumns,
+  RelationSpec,
+  TenantResolver,
+  TenantScopeSpec,
+} from './filter_spec.js';
+export { applyCursorFromRequest, applyFilterFromRequest } from './apply_from_request.js';
+export type {
+  ApplyCursorFromRequestOptions,
+  ApplyFromRequestOptions,
+  FilterRequestContext,
+} from './apply_from_request.js';
+export { parseFilterRequest, parseSort, toColumnFilters } from './parse_request.js';
+export { parseSpatieRequest } from './spatie_parser.js';
+export type { SpatieInput } from './spatie_parser.js';
+export { applyCursor, applyFilter } from './runner.js';
+export type { CursorConfig, ResolvedPagination } from './runner.js';
 export {
   applyColumnFilters,
+  applyKeyset,
   applySearch,
   applySort,
   type QueryBuilderLike,
 } from './lucid_adapter.js';
+export {
+  buildCursorPage,
+  buildKeyset,
+  decodeCursor,
+  encodeCursor,
+  extractCursorValues,
+  reverseKeyset,
+} from './cursor.js';
+export type { CursorPage, CursorParams, CursorValues, ResolvedCursor } from './cursor.js';
+export { remapFilterAliases, remapSortAliases, resolveFieldAlias } from './field_aliases.js';
+export type { FieldAliases } from './field_aliases.js';
+export { normalizeInput } from './normalizer.js';
+export type { NormalizeOptions } from './normalizer.js';
+export { resolveInputFromRequest } from './source_resolver.js';

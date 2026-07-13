@@ -1,11 +1,12 @@
-# `@agora/filter`
+# `@adonis-agora/filter`
 
 Server-side query filtering, sorting, and pagination for AdonisJS. Parses the
 Spatie/JSON:API query the `@agora/filter-client` builder emits, applies it to a
-Lucid query through a field allow-list, and resolves offset pagination.
+Lucid query through a field allow-list, and resolves offset or keyset (cursor)
+pagination.
 
 ```ts
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 
 const input = parseFilterRequest(ctx.request.qs())
 const query = User.query()

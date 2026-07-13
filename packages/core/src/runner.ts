@@ -1,11 +1,20 @@
 import {
+  type CursorParams,
+  type ResolvedCursor,
+  buildKeyset,
+  decodeCursor,
+  reverseKeyset,
+} from './cursor.js';
+import { remapFilterAliases, remapSortAliases } from './field_aliases.js';
+import {
   type QueryBuilderLike,
   applyColumnFilters,
+  applyKeyset,
   applySearch,
   applySort,
 } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
-import type { FilterConfig, FilterInput, SortItem } from './types.js';
+import type { AllowList, FilterConfig, FilterInput, SortItem } from './types.js';
 import { InvalidColumnFilterError, validateColumnFilters } from './validate-column-filter.js';
 
 /** The resolved offset pagination to hand to Lucid's `query.paginate(page, size)`. */
@@ -14,8 +23,10 @@ export interface ResolvedPagination {
   size: number;
 }
 
-function isAllowed(field: string, allow: string[] | '*'): boolean {
-  return allow === '*' || allow.includes(field);
+function isAllowed(field: string, allow: AllowList): boolean {
+  if (allow === '*') return true;
+  if (typeof allow === 'function') return allow(field);
+  return allow.includes(field);
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -29,7 +40,7 @@ function clamp(n: number, min: number, max: number): number {
  */
 function prune(
   filter: ColumnFilter,
-  allowed: string[] | '*',
+  allowed: AllowList,
   throwOnInvalid: boolean,
 ): ColumnFilter | null {
   const hasField = typeof filter.field === 'string' && filter.field.length > 0;
@@ -65,6 +76,64 @@ function prune(
 }
 
 /**
+ * Resolve aliases, structurally validate, and prune `input.filters`/`input.search`
+ * against the allow-lists, applying the survivors to the builder. Shared by both
+ * {@link applyFilter} (offset) and {@link applyCursor} (keyset) so the security
+ * boundary is identical for either pagination style.
+ */
+function applyFilterConditions(
+  qb: QueryBuilderLike,
+  input: FilterInput,
+  config: FilterConfig,
+): void {
+  const throwOnInvalid = config.throwOnInvalid ?? false;
+
+  if (input.filters && input.filters.length > 0) {
+    // Alias resolution runs FIRST — the allow-list, validation and query builder
+    // all see the resolved target column, never the client-facing alias key.
+    const aliased = config.aliases
+      ? input.filters.map((f) =>
+          remapFilterAliases(f, config.aliases as NonNullable<typeof config.aliases>),
+        )
+      : input.filters;
+    // Structural validation next (operator/value shape, depth, field charset).
+    validateColumnFilters(aliased);
+    const safe = aliased
+      .map((f) => prune(f, config.allowed, throwOnInvalid))
+      .filter((f): f is ColumnFilter => f !== null);
+    if (safe.length > 0) {
+      applyColumnFilters(qb, safe);
+    }
+  }
+
+  if (input.search && config.searchable && config.searchable.length > 0) {
+    const term = input.search.trim();
+    if (term.length > 0) {
+      applySearch(qb, term, config.searchable);
+    }
+  }
+}
+
+/** Resolve the alias-mapped, allow-listed sort directives for the request. */
+function resolveSafeSort(sort: SortItem[], config: FilterConfig): SortItem[] {
+  const throwOnInvalid = config.throwOnInvalid ?? false;
+  const sortable = config.sortable ?? config.allowed;
+  const aliased = config.aliases
+    ? remapSortAliases(sort, config.aliases as NonNullable<typeof config.aliases>)
+    : sort;
+
+  const safe: SortItem[] = [];
+  for (const item of aliased) {
+    if (isAllowed(item.field, sortable)) {
+      safe.push(item);
+    } else if (throwOnInvalid) {
+      throw new InvalidColumnFilterError(`Field "${item.field}" is not sortable.`);
+    }
+  }
+  return safe;
+}
+
+/**
  * Apply a parsed {@link FilterInput} to a Lucid query builder under a
  * {@link FilterConfig} policy, and return the resolved offset pagination.
  *
@@ -82,36 +151,10 @@ export function applyFilter(
   input: FilterInput,
   config: FilterConfig,
 ): ResolvedPagination {
-  const throwOnInvalid = config.throwOnInvalid ?? false;
-  const sortable = config.sortable ?? config.allowed;
-
-  if (input.filters && input.filters.length > 0) {
-    // Structural validation first (operator/value shape, depth, field charset).
-    validateColumnFilters(input.filters);
-    const safe = input.filters
-      .map((f) => prune(f, config.allowed, throwOnInvalid))
-      .filter((f): f is ColumnFilter => f !== null);
-    if (safe.length > 0) {
-      applyColumnFilters(qb, safe);
-    }
-  }
-
-  if (input.search && config.searchable && config.searchable.length > 0) {
-    const term = input.search.trim();
-    if (term.length > 0) {
-      applySearch(qb, term, config.searchable);
-    }
-  }
+  applyFilterConditions(qb, input, config);
 
   if (input.sort && input.sort.length > 0) {
-    const safeSort: SortItem[] = [];
-    for (const sort of input.sort) {
-      if (isAllowed(sort.field, sortable)) {
-        safeSort.push(sort);
-      } else if (throwOnInvalid) {
-        throw new InvalidColumnFilterError(`Field "${sort.field}" is not sortable.`);
-      }
-    }
+    const safeSort = resolveSafeSort(input.sort, config);
     if (safeSort.length > 0) {
       applySort(qb, safeSort);
     }
@@ -120,4 +163,59 @@ export function applyFilter(
   const size = clamp(input.size ?? config.defaultSize ?? 25, 1, config.maxSize ?? 100);
   const page = Math.max(1, input.page ?? 1);
   return { page, size };
+}
+
+/** Per-call policy for {@link applyCursor} — a {@link FilterConfig} plus the keyset tiebreaker. */
+export interface CursorConfig extends FilterConfig {
+  /** Primary-key column appended to the keyset as a stable tiebreaker. Default `'id'`. */
+  primaryKey?: string;
+}
+
+/**
+ * Apply a parsed {@link FilterInput} plus {@link CursorParams} to a Lucid query
+ * builder as a **keyset (cursor) page** under a {@link CursorConfig} policy.
+ *
+ * Filters/search go through the same allow-list boundary as {@link applyFilter}.
+ * The effective (allow-listed) sort, plus the primary-key tiebreaker, forms the
+ * keyset; a supplied `after`/`before` cursor becomes a row-value seek predicate,
+ * and the builder is ordered + limited to `size + 1` (one extra row to detect a
+ * further page). Feed the fetched rows and the returned {@link ResolvedCursor}
+ * to {@link buildCursorPage} to assemble the page and its boundary cursors:
+ *
+ * ```ts
+ * const resolved = applyCursor(Users.query(), input, { allowed: ['name'], primaryKey: 'id' })
+ * const rows = await Users.query()...exec()
+ * const page = buildCursorPage(rows, resolved)
+ * ```
+ */
+export function applyCursor(
+  qb: QueryBuilderLike,
+  input: FilterInput & CursorParams,
+  config: CursorConfig,
+): ResolvedCursor {
+  applyFilterConditions(qb, input, config);
+
+  const safeSort = input.sort && input.sort.length > 0 ? resolveSafeSort(input.sort, config) : [];
+  const baseKeyset = buildKeyset(safeSort, config.primaryKey ?? 'id');
+
+  const backward = input.before !== undefined && input.after === undefined;
+  const cursorStr = input.after ?? input.before;
+  const requested = backward ? input.last : input.first;
+  const size = clamp(requested ?? config.defaultSize ?? 25, 1, config.maxSize ?? 100);
+
+  // For backward paging, reverse keyset directions so the boundary seek and
+  // ordering walk the other way; buildCursorPage re-reverses the rows.
+  const queryKeyset = backward ? reverseKeyset(baseKeyset) : baseKeyset;
+
+  if (cursorStr !== undefined) {
+    const values = decodeCursor(cursorStr);
+    if (values && values.length === queryKeyset.length) {
+      applyKeyset(qb, queryKeyset, values);
+    }
+  }
+
+  applySort(qb, queryKeyset);
+  qb.limit(size + 1);
+
+  return { keyset: baseKeyset, size, backward, hasCursor: cursorStr !== undefined };
 }

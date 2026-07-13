@@ -11,7 +11,7 @@ function toInt(value: unknown): number | undefined {
 }
 
 /** Map one `filter[field]=…` entry to `ColumnFilter[]` (Spatie/JSON:API shapes). */
-function toColumnFilters(field: string, value: unknown): ColumnFilter[] {
+export function toColumnFilters(field: string, value: unknown): ColumnFilter[] {
   // Array (`filter[id][]=1&filter[id][]=2`) → IN.
   if (Array.isArray(value)) {
     return [{ field, operator: 'in', value }];
@@ -42,7 +42,7 @@ function toColumnFilters(field: string, value: unknown): ColumnFilter[] {
 }
 
 /** Parse the `sort` param (`-createdAt,name` or `sort[]=…`) into ordered {@link SortItem}s. */
-function parseSort(sort: unknown): SortItem[] {
+export function parseSort(sort: unknown): SortItem[] {
   let raw: string[] = [];
   if (typeof sort === 'string') raw = sort.split(',');
   else if (Array.isArray(sort)) raw = sort.filter((s): s is string => typeof s === 'string');

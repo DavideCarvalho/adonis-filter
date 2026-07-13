@@ -1,3 +1,4 @@
+import type { FieldAliases } from './field_aliases.js';
 import type { ColumnFilter } from './operators.js';
 
 /** A sort directive: field + direction. */
@@ -5,6 +6,28 @@ export interface SortItem {
   field: string;
   direction: 'asc' | 'desc';
 }
+
+/**
+ * Where a request's structured input is read from, for {@link resolveInputFromRequest}:
+ *
+ * - `'auto'` — query on reads (GET/HEAD), query+body (body wins) on writes.
+ * - `'query'` / `'body'` — always that container.
+ * - a dot-path (e.g. `'body.filters'`) — the nested object at that path.
+ * - a function — a custom extractor receiving the raw request.
+ */
+export type InputSource =
+  | 'auto'
+  | 'query'
+  | 'body'
+  // biome-ignore lint/suspicious/noExplicitAny: `string & {}` keeps literal autocomplete while allowing dot-paths.
+  | (string & {})
+  | ((req: unknown) => Record<string, unknown> | undefined);
+
+/**
+ * How incoming field-name keys are normalized before matching against the
+ * allow-list — a built-in case transform or a custom mapping function.
+ */
+export type InputNormalizer = 'camelCase' | 'snakeCase' | ((key: string) => string);
 
 /**
  * The parsed, structured input a {@link applyFilter} call consumes — produced by
@@ -24,15 +47,27 @@ export interface FilterInput {
 }
 
 /**
+ * An allow-list of field names — the security boundary for filter/sort. One of:
+ *
+ * - `'*'` — allow any field (use with care);
+ * - `string[]` — allow exactly these field names;
+ * - a predicate `(field) => boolean` — allow fields for which it returns true.
+ *   The predicate form lets a policy express rules a flat list can't (e.g.
+ *   relation-path whitelisting with a depth cap). It is evaluated against the
+ *   already alias-resolved target field, never the client-facing alias key.
+ */
+export type AllowList = '*' | string[] | ((field: string) => boolean);
+
+/**
  * Per-call filter policy. The allow-lists are the security boundary: only fields
  * named here can be filtered/sorted/searched, so client input can never probe
  * arbitrary columns.
  */
 export interface FilterConfig {
   /** Columns clients may filter on. `'*'` allows any (use with care). */
-  allowed: string[] | '*';
+  allowed: AllowList;
   /** Columns clients may sort on. Defaults to {@link FilterConfig.allowed}. */
-  sortable?: string[] | '*';
+  sortable?: AllowList;
   /** Columns the free-text `search` term scans (ILIKE). */
   searchable?: string[];
   /** Default page size when none is given. Default 25. */
@@ -41,4 +76,11 @@ export interface FilterConfig {
   maxSize?: number;
   /** Throw `InvalidColumnFilterError` on a disallowed/invalid field instead of dropping it. Default false (drop). */
   throwOnInvalid?: boolean;
+  /**
+   * Declarative field-name remapping applied to filter and sort fields BEFORE
+   * allow-listing — an alias key resolves to its target column, which is what
+   * the allow-list, validation and query builder then see. Aliases do not
+   * cascade. See {@link resolveFieldAlias}.
+   */
+  aliases?: FieldAliases;
 }

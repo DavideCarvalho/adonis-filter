@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyColumnFilters, applySearch, applySort } from '../src/lucid_adapter.js';
+import { applyColumnFilters, applyKeyset, applySearch, applySort } from '../src/lucid_adapter.js';
 import type { ColumnFilter } from '../src/operators.js';
 import { MockQueryBuilder } from './mock_query_builder.js';
 
@@ -79,6 +79,45 @@ describe('lucid adapter — applySort / applySearch', () => {
     const qb = new MockQueryBuilder();
     applySearch(qb, '', ['name']);
     applySearch(qb, 'x', []);
+    expect(qb.flatten()).toEqual([]);
+  });
+});
+
+describe('lucid adapter — applyKeyset', () => {
+  it('single-column keyset seek uses a > comparison for an asc column', () => {
+    const qb = new MockQueryBuilder();
+    applyKeyset(qb, [{ field: 'id', direction: 'asc' }], [10]);
+    expect(qb.flatten()).toEqual([{ method: 'where', args: ['id', '>', 10] }]);
+  });
+
+  it('single-column keyset seek uses a < comparison for a desc column', () => {
+    const qb = new MockQueryBuilder();
+    applyKeyset(qb, [{ field: 'id', direction: 'desc' }], [10]);
+    expect(qb.flatten()).toEqual([{ method: 'where', args: ['id', '<', 10] }]);
+  });
+
+  it('two-column keyset expands into OR-of-AND tiers with equality prefixes', () => {
+    const qb = new MockQueryBuilder();
+    applyKeyset(
+      qb,
+      [
+        { field: 'name', direction: 'asc' },
+        { field: 'id', direction: 'asc' },
+      ],
+      ['Bob', 5],
+    );
+    const flat = qb.flatten();
+    // Tier 0: name > 'Bob'
+    expect(flat).toContainEqual({ method: 'where', args: ['name', '>', 'Bob'] });
+    // Tier 1: name = 'Bob' AND id > 5
+    expect(flat).toContainEqual({ method: 'where', args: ['name', 'Bob'] });
+    expect(flat).toContainEqual({ method: 'where', args: ['id', '>', 5] });
+  });
+
+  it('no-ops when values do not line up with the keyset', () => {
+    const qb = new MockQueryBuilder();
+    applyKeyset(qb, [{ field: 'id', direction: 'asc' }], [1, 2]);
+    applyKeyset(qb, [], []);
     expect(qb.flatten()).toEqual([]);
   });
 });

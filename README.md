@@ -1,4 +1,4 @@
-# `@agora/filter`
+# `@adonis-agora/filter`
 
 > Query filtering, sorting, and pagination for **AdonisJS** — Spatie/JSON:API
 > style. Part of the [Agora](https://github.com/DavideCarvalho) ecosystem.
@@ -7,7 +7,7 @@
 
 | Package | What |
 |---|---|
-| [`@agora/filter`](./packages/core) | server-side: parse request → apply to a Lucid query under a field allow-list, resolve pagination |
+| [`@adonis-agora/filter`](./packages/core) | server-side: parse request → apply to a Lucid query under a field allow-list, resolve pagination |
 | [`@agora/filter-client`](./packages/client) | framework-agnostic client query builder (+ TanStack Table sync) |
 
 ```ts
@@ -16,7 +16,7 @@ import { filterQuery } from '@agora/filter-client'
 const qs = filterQuery().where('age', 'gte', 18).sort('createdAt', 'desc').toQueryString()
 
 // server (AdonisJS controller)
-import { parseFilterRequest, applyFilter } from '@agora/filter'
+import { parseFilterRequest, applyFilter } from '@adonis-agora/filter'
 const input = parseFilterRequest(ctx.request.qs())
 const query = User.query()
 const { page, size } = applyFilter(query, input, { allowed: ['age', 'createdAt'] })
