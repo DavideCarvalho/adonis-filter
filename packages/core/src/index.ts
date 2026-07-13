@@ -24,6 +24,7 @@ export type {
   InputNormalizer,
   InputSource,
   SortItem,
+  VectorSearchConfig,
 } from './types.js';
 export {
   defineFilter,
@@ -54,7 +55,10 @@ export {
   applyKeyset,
   applySearch,
   applySort,
+  applyVectorSearch,
   type QueryBuilderLike,
+  type VectorDistanceMetric,
+  type VectorSearchOptions,
 } from './lucid_adapter.js';
 export {
   buildCursorPage,

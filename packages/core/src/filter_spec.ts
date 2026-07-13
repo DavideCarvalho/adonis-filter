@@ -1,6 +1,6 @@
 import type { FieldAliases } from './field_aliases.js';
 import type { ColumnFilter } from './operators.js';
-import type { AllowList, FilterConfig, SortItem } from './types.js';
+import type { AllowList, FilterConfig, SortItem, VectorSearchConfig } from './types.js';
 
 /**
  * Thrown when a {@link defineFilter} declaration is itself invalid (a developer
@@ -73,6 +73,12 @@ export interface DefineFilterOptions {
   maxDepth?: number;
   /** Client-alias → resolved-target field remapping (see {@link resolveFieldAlias}). */
   aliases?: FieldAliases;
+  /**
+   * Opt-in pgvector similarity search: declares the vector column (and metric /
+   * threshold / top-K) rows are ranked by when a request carries a query
+   * embedding. Additive — a spec without this is unchanged.
+   */
+  vector?: VectorSearchConfig;
   /** Opt-in tenant auto-scope read from ctx. */
   tenant?: TenantScopeSpec;
   /**
@@ -104,6 +110,7 @@ export interface FilterSpec {
   readonly relations: Readonly<Record<string, RelationSpec>>;
   readonly maxDepth: number;
   readonly aliases: FieldAliases | undefined;
+  readonly vector: VectorSearchConfig | undefined;
   readonly tenant: TenantScopeSpec | undefined;
   readonly defaultFilters: readonly ColumnFilter[];
   readonly defaultSort: readonly SortItem[];
@@ -215,6 +222,7 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
     relations,
     maxDepth,
     aliases: options.aliases,
+    vector: options.vector,
     tenant: options.tenant,
     defaultFilters: options.defaultFilters ?? [],
     defaultSort: options.defaultSort ?? [],
@@ -249,6 +257,7 @@ export function specToFilterConfig(spec: FilterSpec): FilterConfig {
     sortable,
     ...(spec.searchable.length > 0 && { searchable: [...spec.searchable] }),
     ...(spec.aliases && { aliases: spec.aliases }),
+    ...(spec.vector && { vector: spec.vector }),
     ...(spec.defaultSize !== undefined && { defaultSize: spec.defaultSize }),
     ...(spec.maxSize !== undefined && { maxSize: spec.maxSize }),
     throwOnInvalid: spec.throwOnInvalid,

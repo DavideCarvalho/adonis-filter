@@ -12,6 +12,7 @@ import {
   applyKeyset,
   applySearch,
   applySort,
+  applyVectorSearch,
 } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
 import type { AllowList, FilterConfig, FilterInput, SortItem } from './types.js';
@@ -152,6 +153,20 @@ export function applyFilter(
   config: FilterConfig,
 ): ResolvedPagination {
   applyFilterConditions(qb, input, config);
+
+  // Vector similarity ranking (opt-in, additive): only when the policy declares a
+  // vector column AND the request carries a query embedding. Applied before the
+  // user sort so nearest-first distance is the primary ordering; any allowed sort
+  // then acts as a tiebreaker.
+  if (config.vector && input.vector && input.vector.length > 0) {
+    applyVectorSearch(qb, {
+      column: config.vector.column,
+      vector: input.vector,
+      ...(config.vector.metric !== undefined && { metric: config.vector.metric }),
+      ...(config.vector.threshold !== undefined && { threshold: config.vector.threshold }),
+      ...(config.vector.topK !== undefined && { topK: config.vector.topK }),
+    });
+  }
 
   if (input.sort && input.sort.length > 0) {
     const safeSort = resolveSafeSort(input.sort, config);

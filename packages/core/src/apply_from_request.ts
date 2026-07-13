@@ -27,6 +27,13 @@ export interface ApplyFromRequestOptions {
    * {@link parseFilterRequest}.
    */
   input?: FilterInput;
+  /**
+   * Query embedding for pgvector similarity ranking. The idiomatic path: the
+   * controller computes it from an embedding service and passes it here (rather
+   * than shipping a large float array through the query string). Ignored unless
+   * the spec declares a `vector` column; merged over any `input.vector`.
+   */
+  vector?: readonly number[];
 }
 
 /** Options for {@link applyCursorFromRequest}. */
@@ -105,8 +112,10 @@ export function applyFilterFromRequest(
   options: ApplyFromRequestOptions = {},
 ): ResolvedPagination {
   const parsed = options.input ?? parseFilterRequest(rawQs(ctx));
+  const withVector =
+    options.vector !== undefined ? { ...parsed, vector: options.vector } : parsed;
   applyServerScope(query, spec, ctx);
-  return applyFilter(query, withDefaultSort(parsed, spec), specToFilterConfig(spec));
+  return applyFilter(query, withDefaultSort(withVector, spec), specToFilterConfig(spec));
 }
 
 /** Parse cursor (keyset) params from a decoded query string (Spatie `page[...]` shapes). */

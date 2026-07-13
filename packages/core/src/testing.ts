@@ -87,6 +87,14 @@ export class MockQueryBuilder implements QueryBuilderLike {
   orderBy(column: string, direction: 'asc' | 'desc'): this {
     return this.record('orderBy', column, direction);
   }
+  /** Record a raw predicate: `args` are `[sql, bindings]` (bindings default `[]`). */
+  whereRaw(sql: string, bindings: readonly unknown[] = []): this {
+    return this.record('whereRaw', sql, bindings);
+  }
+  /** Record a raw ordering: `args` are `[sql, bindings]` (bindings default `[]`). */
+  orderByRaw(sql: string, bindings: readonly unknown[] = []): this {
+    return this.record('orderByRaw', sql, bindings);
+  }
   limit(count: number): this {
     return this.record('limit', count);
   }

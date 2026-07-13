@@ -1,4 +1,5 @@
 import type { FieldAliases } from './field_aliases.js';
+import type { VectorDistanceMetric } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
 
 /** A sort directive: field + direction. */
@@ -44,6 +45,30 @@ export interface FilterInput {
   page?: number;
   /** Page size for offset pagination. */
   size?: number;
+  /**
+   * A query embedding to rank rows by pgvector similarity. Applied only when the
+   * policy declares a vector-searchable column (see {@link FilterConfig.vector}) —
+   * ignored otherwise, so non-vector requests are unchanged. Typically the
+   * controller computes this from an embedding service, not the query string.
+   */
+  vector?: readonly number[];
+}
+
+/**
+ * Declares a pgvector-searchable column on a policy. When a request also carries
+ * a query embedding ({@link FilterInput.vector}), the runner ranks rows by
+ * ascending distance to it. Additive — a policy without this behaves exactly as
+ * before.
+ */
+export interface VectorSearchConfig {
+  /** The pgvector column ranked against the query embedding (e.g. `'embedding'`). */
+  column: string;
+  /** Distance metric → pgvector operator. Default `'cosine'` (`<=>`). */
+  metric?: VectorDistanceMetric;
+  /** Optional max-distance filter — drop rows farther than this from the embedding. */
+  threshold?: number;
+  /** Optional top-K truncation — keep only the K nearest rows. */
+  topK?: number;
 }
 
 /**
@@ -83,4 +108,10 @@ export interface FilterConfig {
    * cascade. See {@link resolveFieldAlias}.
    */
   aliases?: FieldAliases;
+  /**
+   * Opt-in pgvector similarity search. When set and the request carries a query
+   * embedding ({@link FilterInput.vector}), rows are ranked nearest-first by
+   * distance to it. Omitted → no vector search (default).
+   */
+  vector?: VectorSearchConfig;
 }

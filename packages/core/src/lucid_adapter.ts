@@ -34,7 +34,138 @@ export interface QueryBuilderLike {
   whereILike(column: string, value: string): QueryBuilderLike;
   orWhereILike(column: string, value: string): QueryBuilderLike;
   orderBy(column: string, direction: 'asc' | 'desc'): QueryBuilderLike;
+  /**
+   * Add a raw SQL predicate with positional bindings — Lucid's `whereRaw`. The
+   * escape hatch for constraints no structured method can express, used here for
+   * pgvector similarity (`embedding <=> ?::vector < ?`). `sql` is server-authored
+   * (never client text); every user value travels as a `?` binding. Optional on
+   * real Lucid builders; the recording mock implements it so vector translation
+   * stays unit-testable and the package stays framework-free.
+   */
+  whereRaw(sql: string, bindings?: readonly unknown[]): QueryBuilderLike;
+  /**
+   * Add a raw SQL ordering with positional bindings — Lucid's `orderByRaw`. Used
+   * to order by a pgvector distance expression (`embedding <=> ?::vector asc`),
+   * which no column-name `orderBy` can express. Same seam contract as
+   * {@link QueryBuilderLike.whereRaw}.
+   */
+  orderByRaw(sql: string, bindings?: readonly unknown[]): QueryBuilderLike;
   limit(count: number): QueryBuilderLike;
+}
+
+/**
+ * A pgvector distance metric → the operator applied between the vector column and
+ * the query embedding:
+ *
+ * - `'cosine'` — cosine distance, pgvector `<=>` (default; the usual choice for
+ *   normalized embeddings).
+ * - `'l2'` — Euclidean / L2 distance, pgvector `<->`.
+ * - `'innerProduct'` — negative inner product, pgvector `<#>`.
+ *
+ * All three are *distance* operators (smaller = more similar), so nearest-first
+ * ranking is always ascending order.
+ */
+export type VectorDistanceMetric = 'cosine' | 'l2' | 'innerProduct';
+
+/** pgvector distance operator for each {@link VectorDistanceMetric}. */
+const VECTOR_OPERATORS: Record<VectorDistanceMetric, string> = {
+  cosine: '<=>',
+  l2: '<->',
+  innerProduct: '<#>',
+};
+
+/**
+ * Options for {@link applyVectorSearch} — a pgvector similarity search against a
+ * `vector` column. Modeled on the NestJS adapter's `applyVectorSearch` seam, but
+ * specialized for embedding similarity: a query embedding is ranked against the
+ * column by a distance metric, optionally filtered by a distance threshold and
+ * truncated to the top-K nearest rows.
+ */
+export interface VectorSearchOptions {
+  /** The pgvector column to compare the query embedding against (e.g. `'embedding'`). */
+  column: string;
+  /** The query embedding — the vector rows are ranked by similarity to. */
+  vector: readonly number[];
+  /** Distance metric → pgvector operator. Default `'cosine'` (`<=>`). */
+  metric?: VectorDistanceMetric;
+  /**
+   * Keep only rows whose distance to the query embedding is strictly below this
+   * value (a `WHERE embedding <=> ? < threshold`). Omitted → no distance filter.
+   */
+  threshold?: number;
+  /**
+   * Limit the result to the K nearest rows (a `LIMIT`). Omitted → no limit is
+   * added here (the caller's pagination still applies).
+   */
+  topK?: number;
+  /**
+   * Order by ascending distance (nearest first). Default `true`. Set `false` to
+   * apply only a threshold filter without changing the query's ordering.
+   */
+  order?: boolean;
+}
+
+/** A safe SQL identifier: an unquoted column, optionally `table.column` qualified. */
+const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
+
+/** Quote a (possibly dotted) identifier for Postgres, one segment at a time. */
+function quoteColumn(column: string): string {
+  return column
+    .split('.')
+    .map((seg) => `"${seg}"`)
+    .join('.');
+}
+
+/**
+ * Serialize a numeric embedding to a pgvector literal (`[1,2,3]`). Returns `null`
+ * for an empty vector (a no-op signal). Throws on a non-finite component so a bad
+ * embedding fails loudly rather than emitting `NaN`/`Infinity` into SQL.
+ */
+function serializeVector(vector: readonly number[]): string | null {
+  if (vector.length === 0) return null;
+  for (const n of vector) {
+    if (typeof n !== 'number' || !Number.isFinite(n)) {
+      throw new TypeError('Vector search embedding must contain only finite numbers.');
+    }
+  }
+  return `[${vector.join(',')}]`;
+}
+
+/**
+ * Apply a pgvector similarity search to a Lucid query builder.
+ *
+ * pgvector expresses similarity through raw distance operators (`<=>`, `<->`,
+ * `<#>`) that no structured query-builder method covers, so this drives the
+ * adapter's raw seam ({@link QueryBuilderLike.whereRaw}/`orderByRaw`) with the
+ * query embedding passed as a positional binding — the column name is the only
+ * interpolated fragment, and it is validated against a strict identifier charset
+ * so it can never carry injection. The distance expression is
+ * `<column> <op> ?::vector`, cast to `vector` so a text binding compares against
+ * the column.
+ *
+ * A no-op when the embedding is empty. When `order` is not `false`, rows are
+ * ordered nearest-first (ascending distance); `threshold` adds a max-distance
+ * filter; `topK` truncates to the K nearest.
+ */
+export function applyVectorSearch(qb: QueryBuilderLike, opts: VectorSearchOptions): void {
+  const literal = serializeVector(opts.vector);
+  if (literal === null) return;
+  if (!SAFE_IDENTIFIER.test(opts.column)) {
+    throw new TypeError(`Invalid vector column name: ${JSON.stringify(opts.column)}`);
+  }
+
+  const operator = VECTOR_OPERATORS[opts.metric ?? 'cosine'];
+  const distance = `${quoteColumn(opts.column)} ${operator} ?::vector`;
+
+  if (opts.threshold !== undefined) {
+    qb.whereRaw(`${distance} < ?`, [literal, opts.threshold]);
+  }
+  if (opts.order !== false) {
+    qb.orderByRaw(`${distance} asc`, [literal]);
+  }
+  if (opts.topK !== undefined) {
+    qb.limit(opts.topK);
+  }
 }
 
 /** Wrap a value as a LIKE pattern with escaped metacharacters. */
