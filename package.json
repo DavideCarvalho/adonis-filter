@@ -9,7 +9,7 @@
     "url": "git+https://github.com/DavideCarvalho/adonis-filter.git"
   },
   "author": "Davi Carvalho <davi@goflip.ai>",
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.33.2",
   "engines": {
     "node": ">=20.6.0"
   },
