@@ -20,10 +20,22 @@ export interface QueryBuilderLike {
    * matching the nested conditions — Lucid's `whereHas`. Used to translate a
    * dotted relation-path filter (`posts.title = x`) into a real subquery
    * (`whereHas('posts', (q) => q.where('title', x))`) instead of a dotted
-   * column reference. Optional on real Lucid builders; the recording mock
-   * implements it so relation translation stays unit-testable.
+   * column reference. The recording mock implements it so relation translation
+   * stays unit-testable.
+   *
+   * `relation` is `any`, not `string`, and that is load-bearing: Lucid types its
+   * own `whereHas` as `<Name extends ExtractModelRelations<Model>>(relation: Name, ...)`
+   * — a union of the model's *literal* relation names. `string` is not assignable
+   * to that union, so declaring `relation: string` here makes every real Lucid
+   * builder fail to satisfy this interface, and TS reports the failure against
+   * `where` (the first member it tries), which sends you hunting in the wrong
+   * place. Widening the member to optional does NOT help: an optional member
+   * that is present is still checked. Since the parameter must accept the
+   * `string` the adapter passes AND be assignable to each model's relation-name
+   * union, `any` is the only type that works.
    */
-  whereHas(relation: string, callback: (qb: QueryBuilderLike) => void): QueryBuilderLike;
+  // biome-ignore lint/suspicious/noExplicitAny: see above — `string` here makes every real Lucid builder fail to satisfy this interface. Guarded by test/types/lucid_compat.types.ts.
+  whereHas(relation: any, callback: (qb: QueryBuilderLike) => void): QueryBuilderLike;
   whereNot(column: string, value: unknown): QueryBuilderLike;
   whereIn(column: string, values: unknown[]): QueryBuilderLike;
   whereNotIn(column: string, values: unknown[]): QueryBuilderLike;

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": ["src/**/*.ts", "test/types/**/*.ts"],
+  "//": "exclude is restated, not inherited: the base excludes all of test/**, which would filter test/types back out.",
+  "exclude": ["**/*.spec.ts", "**/*.test.ts", "dist/**"]
+}
