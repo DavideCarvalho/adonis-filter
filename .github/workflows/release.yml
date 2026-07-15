@@ -35,7 +35,16 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       # Trusted publishing needs npm CLI >= 11.5.1; Node 22 still bundles npm 10.x.
-      - run: npm install -g npm@latest
+      #
+      # Pinned to 11.x, NOT @latest: npm 12 changed `npm info <pkg> --json` to return an
+      # array of manifests where 11 returned a single packument object. Changesets reads
+      # `pkgInfo.versions` off that value, which is `undefined` for an array, so on npm 12
+      # EVERY package looks unpublished ("is being published because our local version has
+      # not been published on npm"). It then republishes already-live versions, npm rejects
+      # them with "You cannot publish over the previously published versions", and the run
+      # goes red even though the release itself was fine. Revisit when changesets supports
+      # npm 12's shape.
+      - run: npm install -g 'npm@^11.5.1'
 
       - run: pnpm install --frozen-lockfile
 
