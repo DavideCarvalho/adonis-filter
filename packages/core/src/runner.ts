@@ -1,3 +1,4 @@
+import { coerceFilterValue } from './coerce_value.js';
 import {
   type CursorParams,
   type ResolvedCursor,
@@ -36,6 +37,50 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 /**
+ * Operators whose value is a LIKE pattern rather than a column-typed value. Their argument stays a
+ * string no matter what kind the column is declared as — coercing `contains: '3'` on a numeric
+ * column to the number `3` would destroy the pattern the caller asked for.
+ */
+const PATTERN_OPERATORS = new Set([
+  'contains',
+  'notContains',
+  'iContains',
+  'startsWith',
+  'endsWith',
+]);
+
+/** Operators whose value is a list/tuple — each element is coerced independently. */
+const ARRAY_OPERATORS = new Set(['in', 'notIn', 'isAnyOf', 'between', 'notBetween']);
+
+/**
+ * Coerce one leaf's value against its declared column kind. Returns `ok` unchanged when the field
+ * has no declared type (backwards compatible), when the operator carries a LIKE pattern, or when
+ * the kind has no contract to enforce. An array-valued operator fails as a whole if ANY element
+ * fails — a partially-coerced list would silently filter on something the client never asked for.
+ */
+function coerceFilterForField(
+  filter: ColumnFilter,
+  fieldTypes: FilterConfig['fieldTypes'],
+): { ok: true; value: unknown } | { ok: false; reason: string } {
+  const kind = fieldTypes?.[filter.field]?.kind;
+  if (!kind || PATTERN_OPERATORS.has(String(filter.operator))) {
+    return { ok: true, value: filter.value };
+  }
+
+  if (ARRAY_OPERATORS.has(String(filter.operator)) && Array.isArray(filter.value)) {
+    const out: unknown[] = [];
+    for (const element of filter.value) {
+      const r = coerceFilterValue(element, kind);
+      if (!r.ok) return r;
+      out.push(r.value);
+    }
+    return { ok: true, value: out };
+  }
+
+  return coerceFilterValue(filter.value, kind);
+}
+
+/**
  * Recursively prune a filter against the allow-list. A leaf on a disallowed field
  * is dropped (or throws when `throwOnInvalid`). Group nodes keep only their
  * surviving children; a group left empty is itself dropped (returns `null`).
@@ -44,6 +89,7 @@ function prune(
   filter: ColumnFilter,
   allowed: AllowList,
   throwOnInvalid: boolean,
+  fieldTypes?: FilterConfig['fieldTypes'],
 ): ColumnFilter | null {
   const hasField = typeof filter.field === 'string' && filter.field.length > 0;
 
@@ -55,16 +101,30 @@ function prune(
   }
 
   const next: ColumnFilter = { field: filter.field, operator: filter.operator };
-  if (filter.value !== undefined) next.value = filter.value;
+  if (filter.value !== undefined) {
+    // The field passed the allow-list; now guard the VALUE. An uncoercible value is treated
+    // exactly like a disallowed field (drop, or throw under `throwOnInvalid`) rather than being
+    // handed to the driver, where Postgres would reject it as a 500 from user input.
+    const coerced = coerceFilterForField(filter, fieldTypes);
+    if (!coerced.ok) {
+      if (throwOnInvalid) {
+        throw new InvalidColumnFilterError(
+          `Value for field "${filter.field}" is invalid: ${coerced.reason}.`,
+        );
+      }
+      return null;
+    }
+    next.value = coerced.value;
+  }
 
   if (filter.AND) {
-    const kept = filter.AND.map((f) => prune(f, allowed, throwOnInvalid)).filter(
+    const kept = filter.AND.map((f) => prune(f, allowed, throwOnInvalid, fieldTypes)).filter(
       (f): f is ColumnFilter => f !== null,
     );
     if (kept.length > 0) next.AND = kept;
   }
   if (filter.OR) {
-    const kept = filter.OR.map((f) => prune(f, allowed, throwOnInvalid)).filter(
+    const kept = filter.OR.map((f) => prune(f, allowed, throwOnInvalid, fieldTypes)).filter(
       (f): f is ColumnFilter => f !== null,
     );
     if (kept.length > 0) next.OR = kept;
@@ -101,7 +161,7 @@ function applyFilterConditions(
     // Structural validation next (operator/value shape, depth, field charset).
     validateColumnFilters(aliased);
     const safe = aliased
-      .map((f) => prune(f, config.allowed, throwOnInvalid))
+      .map((f) => prune(f, config.allowed, throwOnInvalid, config.fieldTypes))
       .filter((f): f is ColumnFilter => f !== null);
     if (safe.length > 0) {
       applyColumnFilters(qb, safe);

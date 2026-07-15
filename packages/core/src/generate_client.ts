@@ -20,8 +20,10 @@ import type { FilterSpec, RelationSpec } from './filter_spec.js';
  * so the two ecosystems share one browser runtime.
  */
 
-/** A field's classified value kind — mirrors `@adonis-agora/filter-client`'s `FieldTypeKind`. */
-export type FilterFieldKind = 'string' | 'number' | 'boolean' | 'date' | 'json' | 'unknown';
+// Moved to types.ts — the kind now drives server-side value coercion too, not just codegen.
+// Imported for local use and re-exported so existing `from '.../generate_client.js'` imports keep working.
+import type { FilterFieldKind } from './types.js';
+export type { FilterFieldKind };
 
 /**
  * Optional per-field type information. A {@link FilterSpec} carries the
@@ -173,7 +175,12 @@ export function generateFilterClient(
   const camel = toCamelCase(options.name);
   const clientModule = options.clientModule ?? '@adonis-agora/filter-client';
   const maxDepth = options.maxDepth ?? spec.maxDepth;
-  const fieldTypes = options.fieldTypes ?? {};
+  // The spec's own `fieldTypes` are the default source: declaring a kind there already drives
+  // server-side value coercion, so inheriting it here means one declaration feeds both ends
+  // instead of asking callers to repeat themselves in the manifest. An explicit `options.fieldTypes`
+  // still wins, for a caller that wants richer codegen-only info (enumValues/typeRef) than the
+  // server needs.
+  const fieldTypes = options.fieldTypes ?? spec.fieldTypes ?? {};
   const hasTypes = Object.keys(fieldTypes).length > 0;
 
   const fields = filterableFieldPaths(spec, maxDepth);

@@ -1,4 +1,5 @@
 import type { FieldAliases } from './field_aliases.js';
+import type { FilterFieldTypeInfo } from './generate_client.js';
 import type { ColumnFilter } from './operators.js';
 import type {
   AllowList,
@@ -72,6 +73,23 @@ export interface DefineFilterOptions {
    */
   searchable?: string[];
   /**
+   * Per-field column value types. Declaring a field here does two things at once:
+   *
+   * 1. **Server-side validation.** A query-string filter value is always a string, and Postgres
+   *    silently casts the benign cases (`day_of_week = '3'` works) — so the gap stays invisible
+   *    until a client sends something uncastable (`is_recurring = 'xyz'`), which raises
+   *    `invalid input syntax for type boolean` at the database and surfaces as a **500 driven by
+   *    user input**. With a declared kind the value is coerced up front, and one that can't be
+   *    coerced is treated exactly like a disallowed field: dropped, or a loud
+   *    `InvalidColumnFilterError` (→ 400) under {@link DefineFilterOptions.throwOnInvalid}.
+   * 2. **Type-aware client codegen.** `make:filter-client` reads the same declaration, so the
+   *    emitted client narrows operators per field instead of being operator-permissive.
+   *
+   * One declaration, both ends. Undeclared fields keep the previous behaviour (no coercion), so
+   * adding this to an existing spec is opt-in and backwards compatible.
+   */
+  fieldTypes?: Record<string, FilterFieldTypeInfo>;
+  /**
    * Opt-in Postgres tsvector full-text search. When set, the request `search`
    * string routes through `websearch_to_tsquery`/`@@` (and optional `ts_rank`)
    * instead of the ILIKE `searchable` scan. Column(s) + language + rank.
@@ -123,6 +141,8 @@ export interface FilterSpec {
   readonly filterable: RelationColumns;
   readonly sortable: RelationColumns;
   readonly searchable: readonly string[];
+  /** Declared column value kinds — drives value coercion AND client codegen. */
+  readonly fieldTypes: Readonly<Record<string, FilterFieldTypeInfo>> | undefined;
   readonly fullText: FullTextSearchConfig | undefined;
   readonly relations: Readonly<Record<string, RelationSpec>>;
   readonly maxDepth: number;
@@ -196,8 +216,7 @@ function pathAllowed(
     if (i === segments.length - 2) {
       const leaf = segments[segments.length - 1]!;
       if (leaf.length === 0 || BLOCKED_SEGMENTS.has(leaf)) return false;
-      const list =
-        kind === 'filterable' ? rel.filterable : (rel.sortable ?? rel.filterable);
+      const list = kind === 'filterable' ? rel.filterable : (rel.sortable ?? rel.filterable);
       return columnAllowed(list, leaf);
     }
     node = rel.relations;
@@ -236,6 +255,7 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
     filterable,
     sortable,
     searchable: options.searchable ?? [],
+    fieldTypes: options.fieldTypes,
     fullText: options.fullText,
     relations,
     maxDepth,
@@ -274,6 +294,7 @@ export function specToFilterConfig(spec: FilterSpec): FilterConfig {
     allowed,
     sortable,
     ...(spec.searchable.length > 0 && { searchable: [...spec.searchable] }),
+    ...(spec.fieldTypes && { fieldTypes: spec.fieldTypes }),
     ...(spec.fullText && { fullText: spec.fullText }),
     ...(spec.aliases && { aliases: spec.aliases }),
     ...(spec.vectorSimilarity && { vectorSimilarity: spec.vectorSimilarity }),

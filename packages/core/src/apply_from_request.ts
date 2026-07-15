@@ -1,6 +1,6 @@
 import type { CursorParams, ResolvedCursor } from './cursor.js';
 import { type FilterSpec, specToFilterConfig } from './filter_spec.js';
-import { applyColumnFilters, type QueryBuilderLike } from './lucid_adapter.js';
+import { type QueryBuilderLike, applyColumnFilters } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
 import { parseFilterRequest } from './parse_request.js';
 import { type CursorConfig, type ResolvedPagination, applyCursor, applyFilter } from './runner.js';
@@ -137,7 +137,8 @@ function parseCursorParams(qs: Record<string, unknown>): CursorParams {
   const first = qs.first ?? page?.first;
   const last = qs.last ?? page?.last;
   const toInt = (v: unknown): number | undefined => {
-    const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+    const n =
+      typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : Number.NaN;
     return Number.isFinite(n) ? n : undefined;
   };
   const f = toInt(first);

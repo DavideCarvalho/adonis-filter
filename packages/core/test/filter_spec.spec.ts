@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyCursorFromRequest,
-  applyFilterFromRequest,
-} from '../src/apply_from_request.js';
+import { applyCursorFromRequest, applyFilterFromRequest } from '../src/apply_from_request.js';
 import { FilterDefinitionError, defineFilter, specToFilterConfig } from '../src/filter_spec.js';
 import { InvalidColumnFilterError } from '../src/validate-column-filter.js';
 import { MockQueryBuilder } from './mock_query_builder.js';
@@ -83,7 +80,9 @@ describe('defineFilter — relation whitelist + maxDepth', () => {
     const capped = defineFilter({
       filterable: ['name'],
       maxDepth: 1,
-      relations: { posts: { filterable: ['title'], relations: { comments: { filterable: ['body'] } } } },
+      relations: {
+        posts: { filterable: ['title'], relations: { comments: { filterable: ['body'] } } },
+      },
     });
     expect(capped.isFilterable('posts.title')).toBe(true);
     expect(capped.isFilterable('posts.comments.body')).toBe(false); // depth 2 > maxDepth 1
@@ -91,16 +90,14 @@ describe('defineFilter — relation whitelist + maxDepth', () => {
 
   it('drops a disallowed relation-path filter through the request helper', () => {
     const qb = new MockQueryBuilder();
-    applyFilterFromRequest(
-      qb,
-      spec,
-      ctxOf({ filter: { 'posts.title': 'hi', 'secrets.k': 'x' } }),
-    );
+    applyFilterFromRequest(qb, spec, ctxOf({ filter: { 'posts.title': 'hi', 'secrets.k': 'x' } }));
     const flat = qb.flatten();
     // The whitelisted relation path is translated to a whereHas subquery.
     expect(qb.find('whereHas')?.args).toEqual(['posts']);
     expect(flat).toContainEqual({ method: 'where', args: ['title', 'hi'] });
-    expect(flat.find((c) => c.args.includes('secrets.k') || c.args.includes('secrets'))).toBeUndefined();
+    expect(
+      flat.find((c) => c.args.includes('secrets.k') || c.args.includes('secrets')),
+    ).toBeUndefined();
   });
 });
 
@@ -118,9 +115,9 @@ describe('applyFilterFromRequest — allow-listing + throwOnInvalid', () => {
   it('throws InvalidColumnFilterError on a disallowed field when throwOnInvalid', () => {
     const spec = defineFilter({ filterable: ['name'], throwOnInvalid: true });
     const qb = new MockQueryBuilder();
-    expect(() =>
-      applyFilterFromRequest(qb, spec, ctxOf({ filter: { secret: 'x' } })),
-    ).toThrow(InvalidColumnFilterError);
+    expect(() => applyFilterFromRequest(qb, spec, ctxOf({ filter: { secret: 'x' } }))).toThrow(
+      InvalidColumnFilterError,
+    );
   });
 });
 
@@ -214,9 +211,14 @@ describe('applyCursorFromRequest', () => {
       tenant: { column: 'tenantId', resolve: () => 7 },
     });
     const qb = new MockQueryBuilder();
-    const resolved = applyCursorFromRequest(qb, spec, ctxOf({ filter: { name: 'Al' }, first: '10' }), {
-      primaryKey: 'id',
-    });
+    const resolved = applyCursorFromRequest(
+      qb,
+      spec,
+      ctxOf({ filter: { name: 'Al' }, first: '10' }),
+      {
+        primaryKey: 'id',
+      },
+    );
     const flat = qb.flatten();
     expect(flat).toContainEqual({ method: 'where', args: ['name', 'Al'] });
     expect(flat).toContainEqual({ method: 'where', args: ['tenantId', 7] });

@@ -47,7 +47,12 @@ describe('lucid adapter — applyVectorSimilarity', () => {
 
   it('order:false applies only the threshold filter, no ordering', () => {
     const qb = new MockQueryBuilder();
-    applyVectorSimilarity(qb, { column: 'embedding', vector: [1, 2], threshold: 0.5, order: false });
+    applyVectorSimilarity(qb, {
+      column: 'embedding',
+      vector: [1, 2],
+      threshold: 0.5,
+      order: false,
+    });
     expect(qb.find('whereRaw')).toBeDefined();
     expect(qb.find('orderByRaw')).toBeUndefined();
   });
@@ -73,9 +78,9 @@ describe('lucid adapter — applyVectorSimilarity', () => {
 
   it('rejects a non-finite embedding component', () => {
     const qb = new MockQueryBuilder();
-    expect(() => applyVectorSimilarity(qb, { column: 'embedding', vector: [1, Number.NaN] })).toThrow(
-      /finite numbers/,
-    );
+    expect(() =>
+      applyVectorSimilarity(qb, { column: 'embedding', vector: [1, Number.NaN] }),
+    ).toThrow(/finite numbers/);
   });
 });
 
@@ -135,7 +140,10 @@ describe('defineFilter / applyFilterFromRequest — vector search', () => {
       vectorSimilarity: [0.5, 0.6],
     });
 
-    expect(qb.find('whereRaw')?.args).toEqual(['"embedding" <-> ?::vector < ?', ['[0.5,0.6]', 0.3]]);
+    expect(qb.find('whereRaw')?.args).toEqual([
+      '"embedding" <-> ?::vector < ?',
+      ['[0.5,0.6]', 0.3],
+    ]);
     expect(qb.find('orderByRaw')?.args[0]).toBe('"embedding" <-> ?::vector asc');
     expect(qb.find('limit')?.args).toEqual([8]);
   });

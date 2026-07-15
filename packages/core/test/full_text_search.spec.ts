@@ -102,7 +102,10 @@ describe('runner — full-text search integration', () => {
     const qb = new MockQueryBuilder();
     applyFilter(
       qb,
-      { search: 'graph databases', filters: [{ field: 'status', operator: 'equals', value: 'live' }] },
+      {
+        search: 'graph databases',
+        filters: [{ field: 'status', operator: 'equals', value: 'live' }],
+      },
       { allowed: ['status'], fullText: { column: 'search_vector', rank: true } },
     );
 

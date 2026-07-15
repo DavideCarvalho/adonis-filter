@@ -2,6 +2,15 @@ import type { FieldAliases } from './field_aliases.js';
 import type { FullTextSearchOptions, VectorDistanceMetric } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
 
+/**
+ * A field's classified value kind — mirrors `@adonis-agora/filter-client`'s `FieldTypeKind`.
+ *
+ * Lives here rather than next to the client codegen because it is no longer codegen-only: the same
+ * declaration drives server-side value coercion (see {@link FilterConfig.fieldTypes}). Re-exported
+ * from `generate_client.ts` for backwards compatibility.
+ */
+export type FilterFieldKind = 'string' | 'number' | 'boolean' | 'date' | 'json' | 'unknown';
+
 /** A sort directive: field + direction. */
 export interface SortItem {
   field: string;
@@ -114,6 +123,14 @@ export interface FilterConfig {
    * default search path when {@link FilterConfig.fullText} is not set.
    */
   searchable?: string[];
+  /**
+   * Declared column value kinds, keyed by field. A declared field has its filter value coerced to
+   * that kind; a value that can't be coerced is treated exactly like a disallowed field (dropped,
+   * or thrown under {@link FilterConfig.throwOnInvalid}). Guards the column from an uncastable
+   * value that Postgres would otherwise reject at query time as a 500. Undeclared fields are
+   * passed through uncoerced.
+   */
+  fieldTypes?: Readonly<Record<string, { kind?: FilterFieldKind }>>;
   /**
    * Opt-in Postgres tsvector full-text search. When set, the request `search`
    * string routes through `websearch_to_tsquery`/`@@` (and optional `ts_rank`)
