@@ -1,6 +1,7 @@
 import type { FieldAliases } from './field_aliases.js';
 import type { FilterFieldTypeInfo } from './generate_client.js';
 import type { ColumnFilter } from './operators.js';
+import type { FilterFieldKind } from './types.js';
 import type {
   AllowList,
   FilterConfig,
@@ -25,6 +26,42 @@ export class FilterDefinitionError extends Error {
 
 /** Column-level allow-list for a relation: `'*'` (any column) or a bare-name list. */
 export type RelationColumns = string[] | '*';
+
+/**
+ * The colocated allow-list form: field name → its column kind, declaring both at once.
+ *
+ * The array form makes every non-string field appear twice (once in `filterable`, once in
+ * `fieldTypes`); this states each field and its type in one place, and desugars to exactly that
+ * pair. Fields whose kind carries no contract can still use `'string'` — it is the no-op kind.
+ *
+ * ```ts
+ * defineFilter({ filterable: { advisorId: 'string', dayOfWeek: 'number', isRecurring: 'boolean' } })
+ * ```
+ */
+export type FilterableMap = Record<string, FilterFieldKind>;
+
+/** `filterable` as accepted on input: the classic list/`'*'`, or the colocated map. */
+export type FilterableInput = RelationColumns | FilterableMap;
+
+/** True for the colocated map form (a plain object, not an array and not `'*'`). */
+function isFilterableMap(input: FilterableInput): input is FilterableMap {
+  return typeof input === 'object' && input !== null && !Array.isArray(input);
+}
+
+/** Desugar `filterable` to the allow-list the rest of the lib consumes. */
+function normalizeFilterable(input: FilterableInput): RelationColumns {
+  return isFilterableMap(input) ? Object.keys(input) : input;
+}
+
+/** Extract the `fieldTypes` a colocated `filterable` map declares, or undefined for other forms. */
+function fieldTypesFromFilterable(
+  input: FilterableInput,
+): Record<string, FilterFieldTypeInfo> | undefined {
+  if (!isFilterableMap(input)) return undefined;
+  const out: Record<string, FilterFieldTypeInfo> = {};
+  for (const [field, kind] of Object.entries(input)) out[field] = { kind };
+  return out;
+}
 
 /**
  * The filterable/sortable declaration for one whitelisted relation, keyed by the
@@ -63,8 +100,14 @@ export interface TenantScopeSpec {
  * encoded, as a plain options object (no decorators, no metadata reflection).
  */
 export interface DefineFilterOptions {
-  /** Columns clients may filter on. `'*'` allows any base column. */
-  filterable: RelationColumns;
+  /**
+   * Columns clients may filter on. Three forms:
+   * - `['a', 'b']` — a bare allow-list.
+   * - `'*'` — any base column (use with care).
+   * - `{ a: 'string', b: 'number' }` — the colocated form: allow-list AND {@link
+   *   DefineFilterOptions.fieldTypes} in one place, so a non-string field is not written twice.
+   */
+  filterable: FilterableInput;
   /** Columns clients may sort on. Defaults to {@link DefineFilterOptions.filterable}. */
   sortable?: RelationColumns;
   /**
@@ -247,15 +290,23 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
   }
 
   const relations = options.relations ?? {};
-  const filterable = options.filterable;
-  const sortable = options.sortable ?? options.filterable;
+  // The colocated map form desugars here, at the boundary: the keys become the allow-list and the
+  // values become `fieldTypes`. Everything downstream (the predicates, the runner, the codegen)
+  // keeps seeing the array form it always saw, so this is purely an authoring convenience.
+  const filterable = normalizeFilterable(options.filterable);
+  const sortable = options.sortable ?? filterable;
+  const declaredTypes = fieldTypesFromFilterable(options.filterable);
+  // An explicit `fieldTypes` entry wins per field: the map form can only express a bare kind, so
+  // this is how a caller adds codegen-only richness (enumValues/typeRef) on top of it.
+  const fieldTypes =
+    declaredTypes || options.fieldTypes ? { ...declaredTypes, ...options.fieldTypes } : undefined;
   const maxDepth = options.maxDepth ?? declaredDepth(relations);
 
   const spec: FilterSpec = {
     filterable,
     sortable,
     searchable: options.searchable ?? [],
-    fieldTypes: options.fieldTypes,
+    fieldTypes,
     fullText: options.fullText,
     relations,
     maxDepth,
