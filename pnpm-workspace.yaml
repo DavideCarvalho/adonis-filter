@@ -1,6 +1,11 @@
 packages:
   - "packages/*"
+
+# pnpm >= 10 nao roda build script de dependencia sem permissao explicita, e em CI ele
+# ERRA (ERR_PNPM_IGNORED_BUILDS) em vez de so avisar. Os tres compilam binario nativo e
+# ja rodavam sob o pnpm 9; sem liberar, o `pnpm install --frozen-lockfile` do release
+# quebra antes de chegar no changesets.
 allowBuilds:
-  '@biomejs/biome': set this to true or false
-  '@swc/core': set this to true or false
-  esbuild: set this to true or false
+  '@biomejs/biome': true
+  '@swc/core': true
+  esbuild: true
