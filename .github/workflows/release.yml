@@ -13,6 +13,10 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  # Lets the job mint an OIDC token for npm trusted publishing, so a release needs no
+  # long-lived NPM_TOKEN. changesets/action probes for this; without it the run logs
+  # "No NPM_TOKEN or OIDC available" and never attempts OIDC at all.
+  id-token: write
 
 jobs:
   release:
@@ -29,6 +33,9 @@ jobs:
           node-version: 22
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm CLI >= 11.5.1; Node 22 still bundles npm 10.x.
+      - run: npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
