@@ -15,12 +15,12 @@ import type { FilterSpec, RelationSpec } from './filter_spec.js';
  * it trivially testable (snapshot/string assertions) and framework-free, exactly
  * like the rest of this core.
  *
- * The emitted module targets `@agora/filter-client`'s `filterQueryTyped<Fields,
+ * The emitted module targets `@adonis-agora/filter-client`'s `filterQueryTyped<Fields,
  * FieldTypes>()` factory — the same client the NestJS codegen emitted against —
  * so the two ecosystems share one browser runtime.
  */
 
-/** A field's classified value kind — mirrors `@agora/filter-client`'s `FieldTypeKind`. */
+/** A field's classified value kind — mirrors `@adonis-agora/filter-client`'s `FieldTypeKind`. */
 export type FilterFieldKind = 'string' | 'number' | 'boolean' | 'date' | 'json' | 'unknown';
 
 /**
@@ -50,7 +50,7 @@ export interface GenerateFilterClientOptions {
   name: string;
   /** Per-field value types keyed by (dotted) field path. Unlocks operator narrowing. */
   fieldTypes?: Record<string, FilterFieldTypeInfo>;
-  /** Import specifier for `filterQueryTyped`. Default `'@agora/filter-client'`. */
+  /** Import specifier for `filterQueryTyped`. Default `'@adonis-agora/filter-client'`. */
   clientModule?: string;
   /** Cap relation-path depth of the emitted field union. Default {@link FilterSpec.maxDepth}. */
   maxDepth?: number;
@@ -171,7 +171,7 @@ export function generateFilterClient(
 ): string {
   const pascal = toPascalCase(options.name);
   const camel = toCamelCase(options.name);
-  const clientModule = options.clientModule ?? '@agora/filter-client';
+  const clientModule = options.clientModule ?? '@adonis-agora/filter-client';
   const maxDepth = options.maxDepth ?? spec.maxDepth;
   const fieldTypes = options.fieldTypes ?? {};
   const hasTypes = Object.keys(fieldTypes).length > 0;

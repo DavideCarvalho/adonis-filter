@@ -699,7 +699,7 @@ export class FilterQueryBuilder {
  * Creates a new FilterQueryBuilder instance.
  *
  * @example
- * import { filterQuery } from '@agora/filter-client';
+ * import { filterQuery } from '@adonis-agora/filter-client';
  *
  * const q = filterQuery()
  *   .where('name', 'contains', 'fleet')

@@ -72,7 +72,7 @@ function parsePagination(qs: Record<string, unknown>): { page?: number; size?: n
 /**
  * Parse a decoded request query object — e.g. AdonisJS `ctx.request.qs()` — into
  * a structured {@link FilterInput}. Understands the Spatie / JSON:API shapes the
- * `@agora/filter-client` builder emits:
+ * `@adonis-agora/filter-client` builder emits:
  *
  * - `filter[status]=active` → equals
  * - `filter[id]=1,2,3` / `filter[id][]=1&filter[id][]=2` → IN

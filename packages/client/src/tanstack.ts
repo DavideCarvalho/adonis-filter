@@ -45,8 +45,8 @@ const defaultResolveOperator: ResolveOperator = (_columnId, value) => {
  * Svelte, Solid). `@tanstack/table-core` is a types-only peer.
  *
  * @example
- * import { filterQuery } from '@agora/filter-client';
- * import { applyTanstackTableState } from '@agora/filter-client/tanstack';
+ * import { filterQuery } from '@adonis-agora/filter-client';
+ * import { applyTanstackTableState } from '@adonis-agora/filter-client/tanstack';
  *
  * const body = applyTanstackTableState(filterQuery(), {
  *   columnFilters: table.getState().columnFilters,
