@@ -1,9 +1,4 @@
 {
   "title": "Definitions",
-  "pages": [
-    "index",
-    "relations",
-    "aliases",
-    "request-input"
-  ]
+  "pages": ["index", "relations", "aliases", "request-input"]
 }
