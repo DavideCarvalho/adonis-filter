@@ -7,6 +7,6 @@
     "experimentalDecorators": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "commands/**/*.ts"],
+  "include": ["src/**/*.ts", "commands/**/*.ts", "providers/**/*.ts"],
   "exclude": ["**/*.spec.ts", "**/*.test.ts", "test/**", "dist/**"]
 }

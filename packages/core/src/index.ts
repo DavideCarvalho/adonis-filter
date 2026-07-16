@@ -60,6 +60,8 @@ export type {
   ApplyFromRequestOptions,
   FilterRequestContext,
 } from './apply_from_request.js';
+export { registerFilterMacros } from './lucid_macros.js';
+export type { MacroableQueryBuilder } from './lucid_macros.js';
 export { parseFilterRequest, parseSort, toColumnFilters } from './parse_request.js';
 export { parseSpatieRequest } from './spatie_parser.js';
 export type { SpatieInput } from './spatie_parser.js';
