@@ -27,6 +27,11 @@
       "types": "./dist/commands/main.d.ts",
       "import": "./dist/commands/main.js",
       "default": "./dist/commands/main.js"
+    },
+    "./filter_provider": {
+      "types": "./dist/providers/filter_provider.d.ts",
+      "import": "./dist/providers/filter_provider.js",
+      "default": "./dist/providers/filter_provider.js"
     }
   },
   "files": ["dist/", "README.md", "CHANGELOG.md"],
@@ -38,10 +43,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.typetest.json"
   },
   "peerDependencies": {
-    "@adonisjs/core": "^7.3.0"
+    "@adonisjs/core": "^7.3.0",
+    "@adonisjs/lucid": "^22.0.0"
   },
   "peerDependenciesMeta": {
     "@adonisjs/core": {
+      "optional": true
+    },
+    "@adonisjs/lucid": {
       "optional": true
     }
   },
