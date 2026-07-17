@@ -17,6 +17,10 @@ export {
 } from './validate-column-filter.js';
 export { isOperatorObject, valueToColumnFilters } from './value-shape.js';
 export { escapeLike } from './escape-like.js';
+export { parseAggregatePath } from './aggregate_path.js';
+export type { AggregateFn, AggregatePath } from './aggregate_path.js';
+export { discoverAggregateSources } from './aggregate.js';
+export type { LucidModelLike, LucidRelationLike } from './aggregate.js';
 export type {
   AllowList,
   ComputedContext,

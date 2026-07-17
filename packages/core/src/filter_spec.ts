@@ -1,3 +1,4 @@
+import { type LucidModelLike, discoverAggregateSources } from './aggregate.js';
 import type { FieldAliases } from './field_aliases.js';
 import type { FilterFieldTypeInfo } from './generate_client.js';
 import type { ColumnFilter } from './operators.js';
@@ -76,6 +77,18 @@ export interface RelationSpec {
   sortable?: RelationColumns;
   /** Further whitelisted relations reachable from this one (one hop deeper). */
   relations?: Record<string, RelationSpec>;
+  /**
+   * Numeric child columns exposed to the to-many aggregate functions
+   * (`$sum`/`$avg`/`$min`/`$max`) — e.g. `['views', 'total']` makes
+   * `posts.$sum.views` and `posts.$max.total` filterable/sortable. `$count`
+   * needs no column and is synthesised for every to-many relation regardless.
+   *
+   * Because Lucid does not reflect a column's SQL type, listing a column here is
+   * how the developer asserts it is numeric (the aggregate allow-list). Only
+   * meaningful when the owning {@link DefineFilterOptions.model} is set so the
+   * relation's FK/pivot metadata can be discovered; ignored otherwise.
+   */
+  aggregates?: string[];
 }
 
 /**
@@ -140,6 +153,17 @@ export interface DefineFilterOptions {
   fullText?: FullTextSearchConfig;
   /** Whitelisted relations and their nested filterable/sortable columns. */
   relations?: Record<string, RelationSpec>;
+  /**
+   * The owning Lucid model — enables to-many aggregate fields
+   * (`$count`/`$sum`/`$avg`/`$min`/`$max`). Its relation metadata (hasMany /
+   * manyToMany FK + pivot columns) is introspected at build time to synthesise
+   * aggregate computed sources for the whitelisted {@link relations}. Optional;
+   * without it, aggregate fields are simply not available (the feature degrades
+   * gracefully) — every other feature works with or without it. Also supplies
+   * the default {@link table} (the model's table name) used as the correlated
+   * subquery's outer alias.
+   */
+  model?: LucidModelLike;
   /**
    * Maximum relation-path depth (number of relation hops; a base column is
    * depth 0, `posts.title` is depth 1, `posts.comments.body` is depth 2).
@@ -323,6 +347,20 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
     declaredTypes || options.fieldTypes ? { ...declaredTypes, ...options.fieldTypes } : undefined;
   const maxDepth = options.maxDepth ?? declaredDepth(relations);
 
+  // Root table (the correlated-subquery outer alias): explicit `table` wins,
+  // else the model's own table name.
+  const table = options.table ?? options.model?.table;
+
+  // Discover to-many aggregate computed sources from the model's relation
+  // metadata, then let dev-declared `computed` win on any key collision. The
+  // discovery is capability-gated (no model → empty map) and per-relation
+  // fault-tolerant, so this never throws at wiring time.
+  const aggregateSources = discoverAggregateSources(options.model, relations);
+  const computed =
+    Object.keys(aggregateSources).length > 0 || options.computed
+      ? { ...aggregateSources, ...options.computed }
+      : undefined;
+
   const spec: FilterSpec = {
     filterable,
     sortable,
@@ -333,8 +371,8 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
     maxDepth,
     aliases: options.aliases,
     vectorSimilarity: options.vectorSimilarity,
-    computed: options.computed,
-    table: options.table,
+    computed,
+    table,
     tenant: options.tenant,
     defaultFilters: options.defaultFilters ?? [],
     defaultSort: options.defaultSort ?? [],

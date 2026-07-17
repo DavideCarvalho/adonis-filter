@@ -33,6 +33,33 @@ describe('computed fields in codegen', () => {
   });
 });
 
+describe('aggregate fields in codegen', () => {
+  it('surfaces discovered aggregate keys in the client field union', () => {
+    // Minimal fake Lucid model exposing a hasMany relation's metadata.
+    const model = {
+      table: 'authors',
+      $getRelation() {
+        return {
+          type: 'hasMany',
+          boot() {},
+          relatedModel: () => ({ table: 'posts' }),
+          foreignKeyColumnName: 'author_id',
+          localKeyColumnName: 'id',
+        } as never;
+      },
+    };
+    const spec = defineFilter({
+      model,
+      filterable: ['name'],
+      relations: { posts: { aggregates: ['views'] } },
+    });
+    const code = generateFilterClient(spec, { name: 'authors' });
+    expect(code).toContain('"posts.$count"');
+    expect(code).toContain('"posts.$sum.views"');
+    expect(code).toContain('"posts.$max.views"');
+  });
+});
+
 describe('filterableFieldPaths / sortableFieldPaths', () => {
   it('enumerates base + relation-dotted filterable paths', () => {
     expect(filterableFieldPaths(sampleSpec)).toEqual([
