@@ -2,7 +2,11 @@ import { BaseModel, column, hasMany, manyToMany } from '@adonisjs/lucid/orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineFilter } from '../src/filter_spec.js';
 import { applyFilter } from '../src/runner.js';
-import { type PgHarness, createPgHarness, pgReachable } from './support/pg.js';
+import { type PgHarness, createPgHarness, probePgReachable } from './support/pg.js';
+
+// Resolved at collection time so the pg-backed blocks skip (not fail) when no
+// Postgres is reachable.
+const pgUp = await probePgReachable();
 
 /**
  * To-many aggregate fields ($count/$sum/$avg/$min/$max) against real Postgres,
@@ -13,7 +17,6 @@ import { type PgHarness, createPgHarness, pgReachable } from './support/pg.js';
  */
 
 let harness: PgHarness;
-let available = false;
 
 // ── hasMany: Author → posts ──────────────────────────────────────────────
 class Post extends BaseModel {
@@ -70,9 +73,8 @@ const articleSpec = defineFilter({
 });
 
 beforeAll(async () => {
+  if (!pgUp) return;
   harness = createPgHarness();
-  available = await pgReachable(harness);
-  if (!available) return;
   for (const t of ['agg_posts', 'agg_authors', 'agg_article_tag', 'agg_tags', 'agg_articles']) {
     await harness.raw(`drop table if exists ${t}`);
   }
@@ -121,9 +123,8 @@ describe('aggregate discovery from relation metadata', () => {
   });
 });
 
-describe('hasMany aggregates against real Postgres', () => {
+describe.skipIf(!pgUp)('hasMany aggregates against real Postgres', () => {
   it('filters by $count (> 1 post)', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(
       query as never,
@@ -142,7 +143,6 @@ describe('hasMany aggregates against real Postgres', () => {
   });
 
   it('sorts by $sum.views descending (empty collection sums to 0)', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(
       query as never,
@@ -160,7 +160,6 @@ describe('hasMany aggregates against real Postgres', () => {
   });
 
   it('filters by $max.views', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(
       query as never,
@@ -180,9 +179,8 @@ describe('hasMany aggregates against real Postgres', () => {
   });
 });
 
-describe('manyToMany aggregates against real Postgres', () => {
+describe.skipIf(!pgUp)('manyToMany aggregates against real Postgres', () => {
   it('filters by pivot $count', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Article.query();
     applyFilter(
       query as never,
@@ -202,7 +200,6 @@ describe('manyToMany aggregates against real Postgres', () => {
   });
 
   it('sorts by $sum.weight through the pivot join', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Article.query();
     applyFilter(
       query as never,
@@ -219,9 +216,8 @@ describe('manyToMany aggregates against real Postgres', () => {
   });
 });
 
-describe('aggregate injection safety', () => {
+describe.skipIf(!pgUp)('aggregate injection safety', () => {
   it('binds the client value — a non-numeric injection payload reaches PG as data, not SQL', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     // If the value were concatenated, `(...) > 0 OR 1=1` would return every
     // author. As a bound parameter, PG casts the text to the count's numeric

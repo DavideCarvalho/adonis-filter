@@ -2,7 +2,11 @@ import { BaseModel, column } from '@adonisjs/lucid/orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { applyFilter } from '../src/runner.js';
 import type { ComputedFields, FilterConfig } from '../src/types.js';
-import { type PgHarness, createPgHarness, pgReachable } from './support/pg.js';
+import { type PgHarness, createPgHarness, probePgReachable } from './support/pg.js';
+
+// Resolved at collection time so the pg-backed blocks skip (not fail) when no
+// Postgres is reachable.
+const pgUp = await probePgReachable();
 
 /**
  * Computed (virtual) fields against real Postgres — both source forms:
@@ -13,7 +17,6 @@ import { type PgHarness, createPgHarness, pgReachable } from './support/pg.js';
  */
 
 let harness: PgHarness;
-let available = false;
 
 class Author extends BaseModel {
   static table = 'authors';
@@ -39,9 +42,8 @@ const config: FilterConfig = {
 };
 
 beforeAll(async () => {
+  if (!pgUp) return;
   harness = createPgHarness();
-  available = await pgReachable(harness);
-  if (!available) return;
   await harness.raw('drop table if exists posts');
   await harness.raw('drop table if exists authors');
   await harness.raw(
@@ -59,9 +61,8 @@ afterAll(async () => {
   if (harness) await harness.close();
 });
 
-describe('computed field — verbatim string source', () => {
+describe.skipIf(!pgUp)('computed field — verbatim string source', () => {
   it('filters by the computed expression (contains)', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(
       query as never,
@@ -73,7 +74,6 @@ describe('computed field — verbatim string source', () => {
   });
 
   it('sorts by the computed expression', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(query as never, { sort: [{ field: 'fullName', direction: 'asc' }] }, config);
     const rows = await query;
@@ -82,9 +82,8 @@ describe('computed field — verbatim string source', () => {
   });
 });
 
-describe('computed field — function source (correlated subquery)', () => {
+describe.skipIf(!pgUp)('computed field — function source (correlated subquery)', () => {
   it('filters by a to-many count via the surfaced alias', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(
       query as never,
@@ -100,7 +99,6 @@ describe('computed field — function source (correlated subquery)', () => {
   });
 
   it('sorts by the computed subquery, descending', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     applyFilter(query as never, { sort: [{ field: 'postCount', direction: 'desc' }] }, config);
     const rows = await query;
@@ -109,9 +107,8 @@ describe('computed field — function source (correlated subquery)', () => {
   });
 });
 
-describe('computed field — composition + injection safety', () => {
+describe.skipIf(!pgUp)('computed field — composition + injection safety', () => {
   it('composes a computed sort with a real-column sort in request order', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     // Sort by postCount desc, then lastName asc as a tiebreaker.
     applyFilter(
@@ -129,7 +126,6 @@ describe('computed field — composition + injection safety', () => {
   });
 
   it('keeps the client value parameterized — a SQL-injection value cannot escape', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Author.query();
     // A classic injection payload as the VALUE. If it were concatenated into SQL
     // it would flip the predicate to always-true (returning all 3 authors) or

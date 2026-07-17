@@ -3,7 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseFilterRequest } from '../src/parse_request.js';
 import { applyFilter } from '../src/runner.js';
 import type { FilterConfig } from '../src/types.js';
-import { type PgHarness, createPgHarness, pgReachable } from './support/pg.js';
+import { type PgHarness, createPgHarness, probePgReachable } from './support/pg.js';
+
+// Resolved at collection time so the pg-backed blocks skip (not fail) when no
+// Postgres is reachable.
+const pgUp = await probePgReachable();
 
 /**
  * DISTINCT is the client/server contract this batch fixes: the client emits a
@@ -14,7 +18,6 @@ import { type PgHarness, createPgHarness, pgReachable } from './support/pg.js';
  */
 
 let harness: PgHarness;
-let available = false;
 
 // Columns are applied programmatically (rather than with `@column` decorator
 // syntax) so the test suite does not depend on SWC legacy-decorator transform
@@ -31,9 +34,8 @@ column()(Sighting.prototype, 'city');
 column()(Sighting.prototype, 'species');
 
 beforeAll(async () => {
+  if (!pgUp) return;
   harness = createPgHarness();
-  available = await pgReachable(harness);
-  if (!available) return;
   await harness.raw('drop table if exists sightings');
   await harness.raw(
     'create table sightings (id serial primary key, city text not null, species text not null)',
@@ -50,9 +52,8 @@ afterAll(async () => {
 
 const config: FilterConfig = { allowed: ['city', 'species'] };
 
-describe('distinct projection against real Postgres', () => {
+describe.skipIf(!pgUp)('distinct projection against real Postgres', () => {
   it('baseline (no distinct) returns every matching row — the pre-fix behavior', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const query = Sighting.query().select('city');
     // No distinct in input → applyFilter must not add one.
     applyFilter(query as never, { sort: [{ field: 'city', direction: 'asc' }] }, config);
@@ -61,7 +62,6 @@ describe('distinct projection against real Postgres', () => {
   });
 
   it('distinct([city]) dedups to one row per city (the fix)', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const input = parseFilterRequest({ distinct: 'city', sort: 'city' });
     expect(input.distinct).toEqual(['city']);
     const query = Sighting.query().select('city');
@@ -73,7 +73,6 @@ describe('distinct projection against real Postgres', () => {
   });
 
   it('distinct composes with an active where filter', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const input = parseFilterRequest({
       filter: { species: 'robin' },
       distinct: 'city',
@@ -87,7 +86,6 @@ describe('distinct projection against real Postgres', () => {
   });
 
   it('resolves a distinct alias to its target column before the allow-list', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const input = parseFilterRequest({ distinct: 'town', sort: 'city' });
     const query = Sighting.query().select('city');
     applyFilter(query as never, input, { allowed: ['city'], aliases: { town: 'city' } });
@@ -96,7 +94,6 @@ describe('distinct projection against real Postgres', () => {
   });
 
   it('drops a disallowed distinct field (no dedup applied)', async () => {
-    if (!available) return expect.unreachable('Postgres not reachable');
     const input = parseFilterRequest({ distinct: 'species', sort: 'city' });
     const query = Sighting.query().select('city');
     // 'species' not in allow-list → distinct dropped → every row survives.
