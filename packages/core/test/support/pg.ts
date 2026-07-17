@@ -1,5 +1,5 @@
-import { AppFactory } from '@adonisjs/core/factories/app';
 import { Emitter } from '@adonisjs/core/events';
+import { AppFactory } from '@adonisjs/core/factories/app';
 import { Logger } from '@adonisjs/core/logger';
 import { Database } from '@adonisjs/lucid/database';
 import { BaseModel } from '@adonisjs/lucid/orm';
@@ -43,9 +43,9 @@ export function createPgHarness(): PgHarness {
       connection: 'pg',
       connections: { pg: { client: 'pg', connection: connectionConfig() } },
     },
-    // biome-ignore lint/suspicious/noExplicitAny: standalone Lucid wiring — the factory app's logger/emitter shapes satisfy Lucid at runtime.
+    // Standalone Lucid wiring — the factory app's logger/emitter shapes satisfy
+    // Lucid at runtime; the assertions bridge the nominal type gap.
     logger as any,
-    // biome-ignore lint/suspicious/noExplicitAny: see above.
     emitter as any,
   );
   BaseModel.useAdapter(db.modelAdapter());

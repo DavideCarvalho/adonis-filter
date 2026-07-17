@@ -29,8 +29,7 @@ const computed: ComputedFields = {
   // Verbatim string source (no token substitution).
   fullName: "first_name || ' ' || last_name",
   // Function source — correlated subquery using the surfaced root table alias.
-  postCount: ({ alias }) =>
-    `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)`,
+  postCount: ({ alias }) => `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)`,
 };
 
 const config: FilterConfig = {
@@ -89,7 +88,10 @@ describe('computed field — function source (correlated subquery)', () => {
     const query = Author.query();
     applyFilter(
       query as never,
-      { filters: [{ field: 'postCount', operator: 'gt', value: 1 }], sort: [{ field: 'id', direction: 'asc' }] },
+      {
+        filters: [{ field: 'postCount', operator: 'gt', value: 1 }],
+        sort: [{ field: 'id', direction: 'asc' }],
+      },
       config,
     );
     const rows = await query;

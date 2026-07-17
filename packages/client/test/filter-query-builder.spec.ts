@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FilterQueryBuilder, filterQuery } from '../src/filter-query-builder.js';
+import type { FilterOperator } from '../src/types.js';
 
 describe('FilterQueryBuilder', () => {
   describe('factory', () => {
@@ -1135,8 +1136,8 @@ describe('FilterQueryBuilder', () => {
     });
 
     it('throws on an unknown operator', () => {
-      // biome-ignore lint/suspicious/noExplicitAny: intentionally passing a bad operator.
-      expect(() => filterQuery().whereDynamic('x', 'nope' as any, 1)).toThrow(
+      // 'nope' is intentionally not a valid operator (asserted through to hit the runtime guard).
+      expect(() => filterQuery().whereDynamic('x', 'nope' as unknown as FilterOperator, 1)).toThrow(
         /Unknown filter operator/,
       );
     });

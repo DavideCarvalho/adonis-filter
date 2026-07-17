@@ -75,7 +75,11 @@ describe('applyFilter — allow-listing', () => {
 
   it('adds no distinct when none is requested', () => {
     const qb = new MockQueryBuilder();
-    applyFilter(qb, { filters: [{ field: 'city', operator: 'equals', value: 'x' }] }, { allowed: '*' });
+    applyFilter(
+      qb,
+      { filters: [{ field: 'city', operator: 'equals', value: 'x' }] },
+      { allowed: '*' },
+    );
     expect(qb.find('distinct')).toBeUndefined();
   });
 });

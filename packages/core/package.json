@@ -34,11 +34,7 @@
       "default": "./dist/providers/filter_provider.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -72,14 +68,5 @@
   "engines": {
     "node": ">=20.6.0"
   },
-  "keywords": [
-    "adonisjs",
-    "adonis",
-    "filter",
-    "lucid",
-    "query",
-    "spatie",
-    "pagination",
-    "agora"
-  ]
+  "keywords": ["adonisjs", "adonis", "filter", "lucid", "query", "spatie", "pagination", "agora"]
 }

@@ -67,11 +67,7 @@ function computedKey(computed: ComputedFields | undefined, field: string): boole
  * shape the client emits — never nested inside a boolean group.
  */
 function isComputedLeaf(filter: ColumnFilter, computed: ComputedFields | undefined): boolean {
-  return (
-    computedKey(computed, filter.field) &&
-    filter.AND === undefined &&
-    filter.OR === undefined
-  );
+  return computedKey(computed, filter.field) && filter.AND === undefined && filter.OR === undefined;
 }
 
 /**
@@ -279,7 +275,11 @@ function resolveSafeDistinct(fields: string[], config: FilterConfig): string[] {
  * computed sort and a real-column sort compose in request order — a client can
  * sort by `fullName` then `id` and get exactly that ORDER BY sequence.
  */
-function applySortsWithComputed(qb: QueryBuilderLike, sort: SortItem[], config: FilterConfig): void {
+function applySortsWithComputed(
+  qb: QueryBuilderLike,
+  sort: SortItem[],
+  config: FilterConfig,
+): void {
   const throwOnInvalid = config.throwOnInvalid ?? false;
   const sortable = config.sortable ?? config.allowed;
   for (const item of sort) {

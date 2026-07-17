@@ -74,7 +74,11 @@ describe('distinct projection against real Postgres', () => {
 
   it('distinct composes with an active where filter', async () => {
     if (!available) return expect.unreachable('Postgres not reachable');
-    const input = parseFilterRequest({ filter: { species: 'robin' }, distinct: 'city', sort: 'city' });
+    const input = parseFilterRequest({
+      filter: { species: 'robin' },
+      distinct: 'city',
+      sort: 'city',
+    });
     const query = Sighting.query().select('city');
     applyFilter(query as never, input, config);
     const rows = await query;

@@ -12,10 +12,7 @@ describe('applyComputedField — raw predicate with bound value', () => {
       operator: 'equals',
       value: 'Ada Lovelace',
     });
-    expect(qb.find('whereRaw')?.args).toEqual([
-      "(first || ' ' || last) = ?",
-      ['Ada Lovelace'],
-    ]);
+    expect(qb.find('whereRaw')?.args).toEqual(["(first || ' ' || last) = ?", ['Ada Lovelace']]);
   });
 
   it('binds each element of an IN list, never concatenating', () => {
@@ -82,7 +79,9 @@ describe('runner routing of computed fields', () => {
       },
       config,
     );
-    const orderings = qb.flatten().filter((c) => c.method === 'orderByRaw' || c.method === 'orderBy');
+    const orderings = qb
+      .flatten()
+      .filter((c) => c.method === 'orderByRaw' || c.method === 'orderBy');
     expect(orderings).toEqual([
       {
         method: 'orderByRaw',
@@ -102,11 +101,15 @@ describe('runner routing of computed fields', () => {
   it('never resolves an inherited object key as a computed field', () => {
     const qb = new MockQueryBuilder();
     // `constructor` is on Object.prototype — must not be treated as computed.
-    applyFilter(qb, { filters: [{ field: 'constructor', operator: 'equals', value: 'x' }] }, {
-      allowed: '*',
-      computed,
-      table: 'authors',
-    });
+    applyFilter(
+      qb,
+      { filters: [{ field: 'constructor', operator: 'equals', value: 'x' }] },
+      {
+        allowed: '*',
+        computed,
+        table: 'authors',
+      },
+    );
     // Falls through to the normal column path (no raw computed predicate).
     expect(qb.flatten().some((c) => c.method === 'whereRaw')).toBe(false);
   });
