@@ -1,6 +1,6 @@
 import { escapeLike } from './escape-like.js';
 import type { ColumnFilter, FilterOperator } from './operators.js';
-import type { SortItem } from './types.js';
+import type { ComputedContext, ComputedSource, SortItem } from './types.js';
 import { normalizeOperator } from './validate-column-filter.js';
 
 /**
@@ -441,6 +441,123 @@ export function applySort(qb: QueryBuilderLike, sorts: SortItem[]): void {
 export function applyDistinct(qb: QueryBuilderLike, columns: string[]): void {
   if (columns.length === 0) return;
   qb.distinct(...columns);
+}
+
+/**
+ * Resolve a {@link ComputedSource} to its final SQL expression string. The
+ * string form is verbatim; the function form is invoked with the root table
+ * {@link ComputedContext} so it can splice the outer alias into a correlated
+ * subquery. Either way the result is dev-authored — never client text.
+ */
+export function resolveComputedExpression(source: ComputedSource, alias: string): string {
+  return typeof source === 'function' ? source({ alias } satisfies ComputedContext) : source;
+}
+
+/**
+ * Apply a filter on a dev-declared **computed field** to a Lucid query builder.
+ *
+ * The already-resolved `expression` is inlined as the raw left-hand side (it is
+ * dev-authored — a verbatim string or a function's output — never client text);
+ * the client's filter VALUE always rides through as a positional `?` binding,
+ * exactly the injection-safety contract real-column filters have. The whole
+ * expression is parenthesized so a compound source
+ * (`first || ' ' || last`, `(SELECT …)`) composes under the operator without a
+ * precedence surprise.
+ */
+export function applyComputedField(
+  qb: QueryBuilderLike,
+  expression: string,
+  filter: ColumnFilter,
+): void {
+  const op = normalizeOperator(filter.operator);
+  const value = filter.value;
+  const lhs = `(${expression})`;
+  switch (op) {
+    case 'equals':
+      qb.whereRaw(`${lhs} = ?`, [value]);
+      break;
+    case 'notEquals':
+      qb.whereRaw(`${lhs} <> ?`, [value]);
+      break;
+    case 'gt':
+      qb.whereRaw(`${lhs} > ?`, [value]);
+      break;
+    case 'gte':
+      qb.whereRaw(`${lhs} >= ?`, [value]);
+      break;
+    case 'lt':
+      qb.whereRaw(`${lhs} < ?`, [value]);
+      break;
+    case 'lte':
+      qb.whereRaw(`${lhs} <= ?`, [value]);
+      break;
+    case 'in':
+    case 'isAnyOf': {
+      const values = Array.isArray(value) ? value : [];
+      // An empty IN list matches nothing — emit an always-false predicate rather
+      // than invalid `IN ()` SQL.
+      if (values.length === 0) qb.whereRaw('1 = 0');
+      else qb.whereRaw(`${lhs} in (${values.map(() => '?').join(', ')})`, values);
+      break;
+    }
+    case 'notIn': {
+      const values = Array.isArray(value) ? value : [];
+      if (values.length === 0) qb.whereRaw('1 = 1');
+      else qb.whereRaw(`${lhs} not in (${values.map(() => '?').join(', ')})`, values);
+      break;
+    }
+    case 'between': {
+      const [low, high] = value as [unknown, unknown];
+      qb.whereRaw(`${lhs} between ? and ?`, [low, high]);
+      break;
+    }
+    case 'notBetween': {
+      const [low, high] = value as [unknown, unknown];
+      qb.whereRaw(`${lhs} not between ? and ?`, [low, high]);
+      break;
+    }
+    case 'contains':
+    case 'iContains':
+      qb.whereRaw(`${lhs} ilike ?`, [like(value, 'contains')]);
+      break;
+    case 'notContains':
+      qb.whereRaw(`(${lhs} not ilike ? or ${lhs} is null)`, [like(value, 'contains')]);
+      break;
+    case 'startsWith':
+      qb.whereRaw(`${lhs} ilike ?`, [like(value, 'startsWith')]);
+      break;
+    case 'endsWith':
+      qb.whereRaw(`${lhs} ilike ?`, [like(value, 'endsWith')]);
+      break;
+    case 'isNull':
+    case 'notExists':
+      qb.whereRaw(`${lhs} is null`);
+      break;
+    case 'isNotNull':
+    case 'exists':
+      qb.whereRaw(`${lhs} is not null`);
+      break;
+    case 'isEmpty':
+      qb.whereRaw(`${lhs} = ?`, ['']);
+      break;
+    case 'isNotEmpty':
+      qb.whereRaw(`${lhs} <> ?`, ['']);
+      break;
+  }
+}
+
+/**
+ * Append an ORDER BY on a dev-declared **computed field** to a Lucid query
+ * builder via `orderByRaw`. Uses append semantics (like `orderBy`) so a computed
+ * sort composes with real-column sorts in request order. The expression is
+ * dev-authored and parenthesized; the direction is a validated literal.
+ */
+export function applyComputedSort(
+  qb: QueryBuilderLike,
+  expression: string,
+  direction: 'asc' | 'desc',
+): void {
+  qb.orderByRaw(`(${expression}) ${direction === 'desc' ? 'desc' : 'asc'}`);
 }
 
 /**

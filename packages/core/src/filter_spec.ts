@@ -1,7 +1,7 @@
 import type { FieldAliases } from './field_aliases.js';
 import type { FilterFieldTypeInfo } from './generate_client.js';
 import type { ColumnFilter } from './operators.js';
-import type { FilterFieldKind } from './types.js';
+import type { ComputedFields, FilterFieldKind } from './types.js';
 import type {
   AllowList,
   FilterConfig,
@@ -156,6 +156,23 @@ export interface DefineFilterOptions {
    * is unchanged.
    */
   vectorSimilarity?: VectorSimilarityConfig;
+  /**
+   * Virtual/computed fields — alias → dev-declared SQL expression
+   * ({@link ComputedFields}). Two source forms: a verbatim string
+   * (`{ fullName: "first || ' ' || last" }`) or a function
+   * (`{ postCount: ({ alias }) => \`(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)\` }`)
+   * for correlated subqueries. A declared alias becomes filterable and sortable
+   * as if it were a real column; the client value stays parameterized and only
+   * the dev expression is inlined. Function-form sources need {@link table}.
+   */
+  computed?: ComputedFields;
+  /**
+   * The root model's table name, surfaced to computed-field functions as the
+   * outer alias (Lucid gives the main table no generated alias, so the table
+   * name IS the alias). Required for function-form computed fields and to-many
+   * aggregate fields whose correlated subqueries reference the outer row.
+   */
+  table?: string;
   /** Opt-in tenant auto-scope read from ctx. */
   tenant?: TenantScopeSpec;
   /**
@@ -191,6 +208,10 @@ export interface FilterSpec {
   readonly maxDepth: number;
   readonly aliases: FieldAliases | undefined;
   readonly vectorSimilarity: VectorSimilarityConfig | undefined;
+  /** Declared computed/virtual fields (alias → SQL source). */
+  readonly computed: ComputedFields | undefined;
+  /** Root table name surfaced to computed-field functions as the outer alias. */
+  readonly table: string | undefined;
   readonly tenant: TenantScopeSpec | undefined;
   readonly defaultFilters: readonly ColumnFilter[];
   readonly defaultSort: readonly SortItem[];
@@ -312,6 +333,8 @@ export function defineFilter(options: DefineFilterOptions): FilterSpec {
     maxDepth,
     aliases: options.aliases,
     vectorSimilarity: options.vectorSimilarity,
+    computed: options.computed,
+    table: options.table,
     tenant: options.tenant,
     defaultFilters: options.defaultFilters ?? [],
     defaultSort: options.defaultSort ?? [],
@@ -349,6 +372,8 @@ export function specToFilterConfig(spec: FilterSpec): FilterConfig {
     ...(spec.fullText && { fullText: spec.fullText }),
     ...(spec.aliases && { aliases: spec.aliases }),
     ...(spec.vectorSimilarity && { vectorSimilarity: spec.vectorSimilarity }),
+    ...(spec.computed && { computed: spec.computed }),
+    ...(spec.table !== undefined && { table: spec.table }),
     ...(spec.defaultSize !== undefined && { defaultSize: spec.defaultSize }),
     ...(spec.maxSize !== undefined && { maxSize: spec.maxSize }),
     throwOnInvalid: spec.throwOnInvalid,

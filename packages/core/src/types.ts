@@ -17,6 +17,36 @@ export interface SortItem {
   direction: 'asc' | 'desc';
 }
 
+/** Context handed to a {@link ComputedSource} function — the root table alias. */
+export interface ComputedContext {
+  /**
+   * The root table's SQL alias — for Lucid this is the model's table name (the
+   * main table carries no generated alias), taken from {@link FilterConfig.table}.
+   * A correlated subquery references the outer row through it, e.g.
+   * `` ({ alias }) => `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)` ``.
+   */
+  alias: string;
+}
+
+/**
+ * A dev-declared virtual/computed field's SQL source. Two forms:
+ *
+ * - **verbatim string** — inlined exactly as written (`"first || ' ' || last"`).
+ *   No token substitution; a correlated subquery needing the outer alias must
+ *   use the function form.
+ * - **function** `({ alias }) => sql` — receives the root table alias
+ *   ({@link ComputedContext}) so it can emit a correlated subquery referencing
+ *   the outer row.
+ *
+ * SAFETY: the source is authored by the developer at declaration time, never by
+ * the client. The client only references the declared alias name; its filter
+ * VALUE is always a bound parameter. Only this dev expression is inlined.
+ */
+export type ComputedSource = string | ((ctx: ComputedContext) => string);
+
+/** A map of computed-field alias → its dev-declared {@link ComputedSource}. */
+export type ComputedFields = Record<string, ComputedSource>;
+
 /**
  * Where a request's structured input is read from, for {@link resolveInputFromRequest}:
  *
@@ -165,4 +195,20 @@ export interface FilterConfig {
    * distance to it. Omitted → no similarity ordering (default).
    */
   vectorSimilarity?: VectorSimilarityConfig;
+  /**
+   * Virtual/computed fields — a map of alias → dev-declared SQL expression
+   * ({@link ComputedSource}). A declared alias becomes filterable and sortable
+   * as if it were a real column; its declaration IS its allow-list (computed
+   * fields bypass the column `allowed`/`sortable` lists — they are not real
+   * columns). The client value is always parameterized; only the dev expression
+   * is inlined.
+   */
+  computed?: ComputedFields;
+  /**
+   * The root table's SQL alias, surfaced to {@link ComputedSource} functions as
+   * {@link ComputedContext.alias}. For Lucid this is the model's table name.
+   * Required for function-form computed fields (and to-many aggregate fields)
+   * whose correlated subqueries must reference the outer row.
+   */
+  table?: string;
 }

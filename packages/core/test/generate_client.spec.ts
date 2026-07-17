@@ -19,6 +19,20 @@ const sampleSpec = defineFilter({
   maxSize: 100,
 });
 
+describe('computed fields in codegen', () => {
+  it('surfaces computed aliases in both filterable and sortable field unions', () => {
+    const spec = defineFilter({
+      filterable: ['first', 'last'],
+      computed: { fullName: "first || ' ' || last", postCount: () => '(SELECT 1)' },
+    });
+    expect(filterableFieldPaths(spec)).toEqual(['first', 'last', 'fullName', 'postCount']);
+    expect(sortableFieldPaths(spec)).toEqual(['first', 'last', 'fullName', 'postCount']);
+    const code = generateFilterClient(spec, { name: 'people' });
+    expect(code).toContain('"fullName"');
+    expect(code).toContain('"postCount"');
+  });
+});
+
 describe('filterableFieldPaths / sortableFieldPaths', () => {
   it('enumerates base + relation-dotted filterable paths', () => {
     expect(filterableFieldPaths(sampleSpec)).toEqual([

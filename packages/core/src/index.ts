@@ -19,6 +19,9 @@ export { isOperatorObject, valueToColumnFilters } from './value-shape.js';
 export { escapeLike } from './escape-like.js';
 export type {
   AllowList,
+  ComputedContext,
+  ComputedFields,
+  ComputedSource,
   FilterConfig,
   FilterInput,
   FullTextSearchConfig,
@@ -69,12 +72,15 @@ export { applyCursor, applyFilter } from './runner.js';
 export type { CursorConfig, ResolvedPagination } from './runner.js';
 export {
   applyColumnFilters,
+  applyComputedField,
+  applyComputedSort,
   applyDistinct,
   applyFullTextSearch,
   applyKeyset,
   applySearch,
   applySort,
   applyVectorSimilarity,
+  resolveComputedExpression,
   type FullTextSearchOptions,
   type QueryBuilderLike,
   type VectorDistanceMetric,
