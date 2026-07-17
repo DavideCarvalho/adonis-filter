@@ -1,3 +1,4 @@
+import { HttpContext } from '@adonisjs/core/http';
 import type { LucidModel } from '@adonisjs/lucid/types/model';
 import {
   type ApplyFromRequestOptions,
@@ -6,6 +7,16 @@ import {
 } from './apply_from_request.js';
 import type { FilterSpec } from './filter_spec.js';
 import type { QueryBuilderLike } from './lucid_adapter.js';
+
+/**
+ * O ctx da request para o macro: explícito, ou o `HttpContext` ativo lido do AsyncLocalStorage do
+ * Adonis quando omitido. `getOrFail()` lança quando não há request em escopo (ex.: chamada dentro de
+ * um job/command) — nesse caso passe o ctx explicitamente. Fica no macro (camada Adonis); o
+ * `applyFilterFromRequest` livre continua framework-agnostic, exigindo o ctx.
+ */
+function resolveCtx(ctx: FilterRequestContext | undefined): FilterRequestContext {
+  return ctx ?? HttpContext.getOrFail();
+}
 
 /**
  * The static slice of a Lucid query-builder class we register onto: Adonis'
@@ -43,20 +54,20 @@ export function registerFilterMacros(ModelQueryBuilder: MacroableQueryBuilder): 
   ModelQueryBuilder.macro('applyFilterFromRequest', function (
     this: QueryBuilderLike,
     spec: FilterSpec,
-    ctx: FilterRequestContext | undefined,
+    ctx?: FilterRequestContext,
     options?: ApplyFromRequestOptions,
   ) {
-    applyFilterFromRequest(this, spec, ctx, options);
+    applyFilterFromRequest(this, spec, resolveCtx(ctx), options);
     return this;
   } as (this: unknown, ...args: never[]) => unknown);
 
   ModelQueryBuilder.macro('filterPaginate', function (
     this: QueryBuilderLike & { paginate(page: number, perPage: number): unknown },
     spec: FilterSpec,
-    ctx: FilterRequestContext | undefined,
+    ctx?: FilterRequestContext,
     options?: ApplyFromRequestOptions,
   ) {
-    const { page, size } = applyFilterFromRequest(this, spec, ctx, options);
+    const { page, size } = applyFilterFromRequest(this, spec, resolveCtx(ctx), options);
     return this.paginate(page, size);
   } as (this: unknown, ...args: never[]) => unknown);
 }
@@ -68,20 +79,24 @@ declare module '@adonisjs/lucid/types/model' {
      * allow-listed filter/sort/search) and return the query for chaining — the
      * method form of the free `applyFilterFromRequest`. Pagination is resolved
      * but not returned here; use {@link filterPaginate} when you need it.
+     *
+     * `ctx` is optional: when omitted, the active `HttpContext` is read from
+     * AsyncLocalStorage (`HttpContext.getOrFail()`). Pass it explicitly outside a
+     * request scope (e.g. a job/command), where there is no ambient context.
      */
     applyFilterFromRequest(
       spec: FilterSpec,
-      ctx: FilterRequestContext | undefined,
+      ctx?: FilterRequestContext,
       options?: ApplyFromRequestOptions,
     ): this;
     /**
      * Apply a {@link FilterSpec} from the request context and paginate with the
      * resolved `{ page, size }`, returning Lucid's paginator — filter + paginate
-     * in one terminal call.
+     * in one terminal call. `ctx` is optional (see {@link applyFilterFromRequest}).
      */
     filterPaginate(
       spec: FilterSpec,
-      ctx: FilterRequestContext | undefined,
+      ctx?: FilterRequestContext,
       options?: ApplyFromRequestOptions,
     ): ReturnType<this['paginate']>;
   }
