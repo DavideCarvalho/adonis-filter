@@ -1,5 +1,11 @@
 # @adonis-agora/filter
 
+## 0.5.0
+
+### Minor Changes
+
+- [#6](https://github.com/DavideCarvalho/adonis-filter/pull/6) [`e39da2c`](https://github.com/DavideCarvalho/adonis-filter/commit/e39da2c6f7e47553990f3295414b23d508894c9a) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Os macros `query.applyFilterFromRequest(spec, ctx?)` e `query.filterPaginate(spec, ctx?)` passam a aceitar `ctx` opcional: quando omitido, leem o `HttpContext` ativo do AsyncLocalStorage do Adonis (`HttpContext.getOrFail()`). Nos controllers (99% dos casos) você chama `query.applyFilterFromRequest(spec)` sem passar o ctx. Fora de uma request (job/command), passe o ctx explicitamente. O default vive só no macro (camada Adonis); a função livre `applyFilterFromRequest` continua framework-agnostic, exigindo o ctx.
+
 ## 0.4.0
 
 ### Minor Changes
