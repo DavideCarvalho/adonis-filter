@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { HttpContext } from '@adonisjs/core/http';
+import { describe, expect, it, vi } from 'vitest';
+import type { FilterRequestContext } from '../src/apply_from_request.js';
 import { defineFilter } from '../src/filter_spec.js';
 import { registerFilterMacros } from '../src/lucid_macros.js';
 import type { FilterInput } from '../src/types.js';
@@ -60,5 +62,22 @@ describe('registerFilterMacros', () => {
     expect(query.paginateArgs).toEqual([2, 10]);
     expect(result).toEqual({ page: 2, perPage: 10 });
     expect(query.flatten()).toContainEqual({ method: 'where', args: ['name', 'Al'] });
+  });
+
+  it('sem ctx cai no HttpContext ativo (getOrFail) em vez de exigir o ctx explícito', () => {
+    const fakeCtx: FilterRequestContext = {};
+    const spy = vi
+      .spyOn(HttpContext, 'getOrFail')
+      .mockReturnValue(fakeCtx as unknown as HttpContext);
+    try {
+      const query = new FakeModelQueryBuilder() as FilterableQuery;
+      const returned = query.applyFilterFromRequest(spec, undefined, { input });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(returned).toBe(query);
+      expect(query.flatten()).toContainEqual({ method: 'where', args: ['name', 'Al'] });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
