@@ -62,6 +62,15 @@ export interface QueryBuilderLike {
    * {@link QueryBuilderLike.whereRaw}.
    */
   orderByRaw(sql: string, bindings?: readonly unknown[]): QueryBuilderLike;
+  /**
+   * Restrict the query to DISTINCT tuples of `columns` — Lucid's `distinct`.
+   * Used by {@link applyDistinct} to execute a client `.distinct(...)`
+   * projection. The columns are the already alias-resolved, allow-listed field
+   * names; a variadic column list matches Lucid's signature exactly. Optional on
+   * real Lucid builders; the recording mock implements it so the translation
+   * stays unit-testable.
+   */
+  distinct(...columns: string[]): QueryBuilderLike;
   limit(count: number): QueryBuilderLike;
 }
 
@@ -419,6 +428,19 @@ export function applySort(qb: QueryBuilderLike, sorts: SortItem[]): void {
   for (const sort of sorts) {
     qb.orderBy(sort.field, sort.direction);
   }
+}
+
+/**
+ * Apply a DISTINCT projection over `columns` to a Lucid query builder — the
+ * executable half of the client's `.distinct(...)` (which until now the server
+ * silently ignored). A no-op for an empty list. The columns are the
+ * already-validated, alias-resolved field names (the runner resolves aliases and
+ * enforces the allow-list before calling this), so nothing client-controlled is
+ * interpolated: Lucid quotes each identifier itself.
+ */
+export function applyDistinct(qb: QueryBuilderLike, columns: string[]): void {
+  if (columns.length === 0) return;
+  qb.distinct(...columns);
 }
 
 /**

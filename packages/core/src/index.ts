@@ -62,13 +62,14 @@ export type {
 } from './apply_from_request.js';
 export { registerFilterMacros } from './lucid_macros.js';
 export type { MacroableQueryBuilder } from './lucid_macros.js';
-export { parseFilterRequest, parseSort, toColumnFilters } from './parse_request.js';
+export { parseDistinct, parseFilterRequest, parseSort, toColumnFilters } from './parse_request.js';
 export { parseSpatieRequest } from './spatie_parser.js';
 export type { SpatieInput } from './spatie_parser.js';
 export { applyCursor, applyFilter } from './runner.js';
 export type { CursorConfig, ResolvedPagination } from './runner.js';
 export {
   applyColumnFilters,
+  applyDistinct,
   applyFullTextSearch,
   applyKeyset,
   applySearch,
@@ -88,7 +89,12 @@ export {
   reverseKeyset,
 } from './cursor.js';
 export type { CursorPage, CursorParams, CursorValues, ResolvedCursor } from './cursor.js';
-export { remapFilterAliases, remapSortAliases, resolveFieldAlias } from './field_aliases.js';
+export {
+  remapDistinctAliases,
+  remapFilterAliases,
+  remapSortAliases,
+  resolveFieldAlias,
+} from './field_aliases.js';
 export type { FieldAliases } from './field_aliases.js';
 export { normalizeInput } from './normalizer.js';
 export type { NormalizeOptions } from './normalizer.js';

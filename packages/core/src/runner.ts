@@ -6,10 +6,11 @@ import {
   decodeCursor,
   reverseKeyset,
 } from './cursor.js';
-import { remapFilterAliases, remapSortAliases } from './field_aliases.js';
+import { remapDistinctAliases, remapFilterAliases, remapSortAliases } from './field_aliases.js';
 import {
   type QueryBuilderLike,
   applyColumnFilters,
+  applyDistinct,
   applyFullTextSearch,
   applyKeyset,
   applySearch,
@@ -190,6 +191,29 @@ function applyFilterConditions(
   }
 }
 
+/**
+ * Resolve the alias-mapped, allow-listed distinct fields for the request. A
+ * distinct field is a projected column, so it is gated by the SAME `allowed`
+ * boundary a `where` field is — aliases resolve first, then the allow-list;
+ * unknown fields are dropped (or rejected under `throwOnInvalid`).
+ */
+function resolveSafeDistinct(fields: string[], config: FilterConfig): string[] {
+  const throwOnInvalid = config.throwOnInvalid ?? false;
+  const aliased = config.aliases
+    ? remapDistinctAliases(fields, config.aliases as NonNullable<typeof config.aliases>)
+    : fields;
+
+  const safe: string[] = [];
+  for (const field of aliased) {
+    if (isAllowed(field, config.allowed)) {
+      if (!safe.includes(field)) safe.push(field);
+    } else if (throwOnInvalid) {
+      throw new InvalidColumnFilterError(`Field "${field}" is not a distinct-able column.`);
+    }
+  }
+  return safe;
+}
+
 /** Resolve the alias-mapped, allow-listed sort directives for the request. */
 function resolveSafeSort(sort: SortItem[], config: FilterConfig): SortItem[] {
   const throwOnInvalid = config.throwOnInvalid ?? false;
@@ -251,6 +275,13 @@ export function applyFilter(
     const safeSort = resolveSafeSort(input.sort, config);
     if (safeSort.length > 0) {
       applySort(qb, safeSort);
+    }
+  }
+
+  if (input.distinct && input.distinct.length > 0) {
+    const safeDistinct = resolveSafeDistinct(input.distinct, config);
+    if (safeDistinct.length > 0) {
+      applyDistinct(qb, safeDistinct);
     }
   }
 

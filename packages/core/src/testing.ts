@@ -98,6 +98,10 @@ export class MockQueryBuilder implements QueryBuilderLike {
   limit(count: number): this {
     return this.record('limit', count);
   }
+  /** Record a DISTINCT projection: `args` are the distinct column names. */
+  distinct(...columns: string[]): this {
+    return this.record('distinct', ...columns);
+  }
 
   /**
    * Every recorded call across this builder and all nested groups and relation

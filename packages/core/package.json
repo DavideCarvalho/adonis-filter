@@ -34,7 +34,11 @@
       "default": "./dist/providers/filter_provider.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -57,12 +61,25 @@
   "devDependencies": {
     "@adonisjs/core": "^7.3.0",
     "@adonisjs/lucid": "22.4.2",
+    "@types/luxon": "^3.7.2",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.20.0",
+    "luxon": "^3.7.2",
+    "pg": "^8.22.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=20.6.0"
   },
-  "keywords": ["adonisjs", "adonis", "filter", "lucid", "query", "spatie", "pagination", "agora"]
+  "keywords": [
+    "adonisjs",
+    "adonis",
+    "filter",
+    "lucid",
+    "query",
+    "spatie",
+    "pagination",
+    "agora"
+  ]
 }

@@ -49,6 +49,14 @@ export interface FilterInput {
   /** Sort directives, applied in order. */
   sort?: SortItem[];
   /**
+   * Select DISTINCT values of the given field(s) — the active filters, search,
+   * sort and pagination still apply. Useful for populating a filter dropdown
+   * with the distinct values of a column. Fields are alias-resolved and checked
+   * against {@link FilterConfig.allowed} exactly like a `where` field; unknown
+   * fields are dropped (or rejected under {@link FilterConfig.throwOnInvalid}).
+   */
+  distinct?: string[];
+  /**
    * Free-text search term. Routed through Postgres tsvector full-text search
    * when the policy declares {@link FilterConfig.fullText}, otherwise a portable
    * ILIKE scan across {@link FilterConfig.searchable}.
