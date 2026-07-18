@@ -6,18 +6,28 @@ import {
   decodeCursor,
   reverseKeyset,
 } from './cursor.js';
-import { remapFilterAliases, remapSortAliases } from './field_aliases.js';
+import {
+  remapDistinctAliases,
+  remapFilterAliases,
+  remapSortAliases,
+  resolveFieldAlias,
+} from './field_aliases.js';
 import {
   type QueryBuilderLike,
   applyColumnFilters,
+  applyComputedField,
+  applyComputedSort,
+  applyDistinct,
   applyFullTextSearch,
   applyKeyset,
   applySearch,
   applySort,
   applyVectorSimilarity,
+  resolveComputedExpression,
 } from './lucid_adapter.js';
 import type { ColumnFilter } from './operators.js';
-import type { AllowList, FilterConfig, FilterInput, SortItem } from './types.js';
+import type { ComputedFields, FilterConfig, FilterInput, SortItem } from './types.js';
+import type { AllowList } from './types.js';
 import { InvalidColumnFilterError, validateColumnFilters } from './validate-column-filter.js';
 
 /** The resolved offset pagination to hand to Lucid's `query.paginate(page, size)`. */
@@ -34,6 +44,30 @@ function isAllowed(field: string, allow: AllowList): boolean {
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * Own-property lookup of a declared computed field. A client-supplied field name
+ * is never trusted as a bare map key (prototype-pollution guard) — only an
+ * OWN, non-inherited key resolves to a computed source.
+ */
+function computedKey(computed: ComputedFields | undefined, field: string): boolean {
+  return (
+    computed !== undefined &&
+    typeof field === 'string' &&
+    field.length > 0 &&
+    Object.hasOwn(computed, field)
+  );
+}
+
+/**
+ * A top-level filter that targets a declared computed field: a leaf (has a
+ * field, no AND/OR children) whose name is an own key of the computed map.
+ * Computed fields are only recognised at the top level of `input.filters` — the
+ * shape the client emits — never nested inside a boolean group.
+ */
+function isComputedLeaf(filter: ColumnFilter, computed: ComputedFields | undefined): boolean {
+  return computedKey(computed, filter.field) && filter.AND === undefined && filter.OR === undefined;
 }
 
 /**
@@ -151,20 +185,40 @@ function applyFilterConditions(
   const throwOnInvalid = config.throwOnInvalid ?? false;
 
   if (input.filters && input.filters.length > 0) {
-    // Alias resolution runs FIRST — the allow-list, validation and query builder
-    // all see the resolved target column, never the client-facing alias key.
-    const aliased = config.aliases
-      ? input.filters.map((f) =>
-          remapFilterAliases(f, config.aliases as NonNullable<typeof config.aliases>),
-        )
-      : input.filters;
-    // Structural validation next (operator/value shape, depth, field charset).
-    validateColumnFilters(aliased);
-    const safe = aliased
-      .map((f) => prune(f, config.allowed, throwOnInvalid, config.fieldTypes))
-      .filter((f): f is ColumnFilter => f !== null);
-    if (safe.length > 0) {
-      applyColumnFilters(qb, safe);
+    // Computed fields are a separate namespace from real columns: a top-level
+    // leaf on a declared computed key is routed to the computed hook (its
+    // declaration IS its allow-list) and NEVER run through the column
+    // alias/validate/allow-list path below. Everything else is a normal column
+    // filter. Checked before alias resolution so a computed key is not remapped.
+    const columnFilters: ColumnFilter[] = [];
+    for (const filter of input.filters) {
+      if (isComputedLeaf(filter, config.computed)) {
+        const expression = resolveComputedExpression(
+          config.computed?.[filter.field] as NonNullable<ComputedFields[string]>,
+          config.table ?? '',
+        );
+        applyComputedField(qb, expression, filter);
+      } else {
+        columnFilters.push(filter);
+      }
+    }
+
+    if (columnFilters.length > 0) {
+      // Alias resolution runs FIRST — the allow-list, validation and query builder
+      // all see the resolved target column, never the client-facing alias key.
+      const aliased = config.aliases
+        ? columnFilters.map((f) =>
+            remapFilterAliases(f, config.aliases as NonNullable<typeof config.aliases>),
+          )
+        : columnFilters;
+      // Structural validation next (operator/value shape, depth, field charset).
+      validateColumnFilters(aliased);
+      const safe = aliased
+        .map((f) => prune(f, config.allowed, throwOnInvalid, config.fieldTypes))
+        .filter((f): f is ColumnFilter => f !== null);
+      if (safe.length > 0) {
+        applyColumnFilters(qb, safe);
+      }
     }
   }
 
@@ -186,6 +240,64 @@ function applyFilterConditions(
       } else if (config.searchable && config.searchable.length > 0) {
         applySearch(qb, term, config.searchable);
       }
+    }
+  }
+}
+
+/**
+ * Resolve the alias-mapped, allow-listed distinct fields for the request. A
+ * distinct field is a projected column, so it is gated by the SAME `allowed`
+ * boundary a `where` field is — aliases resolve first, then the allow-list;
+ * unknown fields are dropped (or rejected under `throwOnInvalid`).
+ */
+function resolveSafeDistinct(fields: string[], config: FilterConfig): string[] {
+  const throwOnInvalid = config.throwOnInvalid ?? false;
+  const aliased = config.aliases
+    ? remapDistinctAliases(fields, config.aliases as NonNullable<typeof config.aliases>)
+    : fields;
+
+  const safe: string[] = [];
+  for (const field of aliased) {
+    if (isAllowed(field, config.allowed)) {
+      if (!safe.includes(field)) safe.push(field);
+    } else if (throwOnInvalid) {
+      throw new InvalidColumnFilterError(`Field "${field}" is not a distinct-able column.`);
+    }
+  }
+  return safe;
+}
+
+/**
+ * Apply the request's sort directives in order, routing each to the right hook:
+ * a declared computed field goes to `applyComputedSort` (an appended
+ * `orderByRaw`), a real column goes through alias resolution + the `sortable`
+ * allow-list to `applySort` (an appended `orderBy`). Both hooks append, so a
+ * computed sort and a real-column sort compose in request order — a client can
+ * sort by `fullName` then `id` and get exactly that ORDER BY sequence.
+ */
+function applySortsWithComputed(
+  qb: QueryBuilderLike,
+  sort: SortItem[],
+  config: FilterConfig,
+): void {
+  const throwOnInvalid = config.throwOnInvalid ?? false;
+  const sortable = config.sortable ?? config.allowed;
+  for (const item of sort) {
+    if (computedKey(config.computed, item.field)) {
+      const expression = resolveComputedExpression(
+        config.computed?.[item.field] as NonNullable<ComputedFields[string]>,
+        config.table ?? '',
+      );
+      applyComputedSort(qb, expression, item.direction);
+      continue;
+    }
+    const field = config.aliases
+      ? resolveFieldAlias(config.aliases as NonNullable<typeof config.aliases>, item.field)
+      : item.field;
+    if (isAllowed(field, sortable)) {
+      applySort(qb, [{ field, direction: item.direction }]);
+    } else if (throwOnInvalid) {
+      throw new InvalidColumnFilterError(`Field "${item.field}" is not sortable.`);
     }
   }
 }
@@ -248,9 +360,13 @@ export function applyFilter(
   }
 
   if (input.sort && input.sort.length > 0) {
-    const safeSort = resolveSafeSort(input.sort, config);
-    if (safeSort.length > 0) {
-      applySort(qb, safeSort);
+    applySortsWithComputed(qb, input.sort, config);
+  }
+
+  if (input.distinct && input.distinct.length > 0) {
+    const safeDistinct = resolveSafeDistinct(input.distinct, config);
+    if (safeDistinct.length > 0) {
+      applyDistinct(qb, safeDistinct);
     }
   }
 

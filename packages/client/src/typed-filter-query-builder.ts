@@ -64,6 +64,14 @@ export interface TypedFilterQueryBuilder<
 
   remove(field: Fields): this;
 
+  // ─── Dynamic escape hatches (untyped field) ─────────────────────────────
+  // Deliberately typed with a plain `string` field, NOT the `Fields` union:
+  // these are the runtime-driven entry points for field names not known at
+  // codegen time (AG-Grid column ids, user-built queries). The server's
+  // allow-list remains the real security boundary.
+  whereDynamic(field: string, operator: FilterOperator, value?: unknown): this;
+  sortDynamic(field: string, direction?: 'asc' | 'desc'): this;
+
   // ─── Convenience methods ────────────────────────────────────────────────
 
   equals<K extends Fields>(field: K, value: EqValue<ValueAt<M, K>>): this;

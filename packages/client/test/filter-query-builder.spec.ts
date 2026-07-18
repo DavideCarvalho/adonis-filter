@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FilterQueryBuilder, filterQuery } from '../src/filter-query-builder.js';
+import type { FilterOperator } from '../src/types.js';
 
 describe('FilterQueryBuilder', () => {
   describe('factory', () => {
@@ -1108,6 +1109,53 @@ describe('FilterQueryBuilder', () => {
     it('clear() resets distinct', () => {
       const result = filterQuery().distinct('status').clear().build();
       expect(result.distinct).toBeUndefined();
+    });
+  });
+
+  describe('whereDynamic / sortDynamic — runtime escape hatches', () => {
+    it('applies a filter on a runtime field name (3-arg)', () => {
+      const result = filterQuery().whereDynamic('runtimeCol', 'gte', 5).build();
+      expect(result.filter.where).toEqual([{ field: 'runtimeCol', operator: 'gte', value: 5 }]);
+    });
+
+    it('accepts the 2-arg unary form and strips any value', () => {
+      const result = filterQuery().whereDynamic('deletedAt', 'isNull').build();
+      expect(result.filter.where).toEqual([
+        { field: 'deletedAt', operator: 'isNull', value: undefined },
+      ]);
+    });
+
+    it('replaces a prior filter on the same field (where semantics)', () => {
+      const result = filterQuery()
+        .where('status', 'active')
+        .whereDynamic('status', 'notEquals', 'archived')
+        .build();
+      expect(result.filter.where).toEqual([
+        { field: 'status', operator: 'notEquals', value: 'archived' },
+      ]);
+    });
+
+    it('throws on an unknown operator', () => {
+      // 'nope' is intentionally not a valid operator (asserted through to hit the runtime guard).
+      expect(() => filterQuery().whereDynamic('x', 'nope' as unknown as FilterOperator, 1)).toThrow(
+        /Unknown filter operator/,
+      );
+    });
+
+    it('sortDynamic adds a directional sort on a runtime field', () => {
+      const result = filterQuery().sortDynamic('runtimeCol', 'desc').sortDynamic('other').build();
+      expect(result.sort).toEqual([
+        { field: 'runtimeCol', direction: 'desc' },
+        { field: 'other', direction: 'asc' },
+      ]);
+    });
+
+    it('notifies subscribers (reactivity) on whereDynamic', () => {
+      const q = filterQuery();
+      let calls = 0;
+      q.subscribe(() => calls++);
+      q.whereDynamic('x', 'equals', 1);
+      expect(calls).toBe(1);
     });
   });
 });

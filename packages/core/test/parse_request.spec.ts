@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseFilterRequest } from '../src/parse_request.js';
+import { parseDistinct, parseFilterRequest } from '../src/parse_request.js';
 
 describe('parseFilterRequest', () => {
   it('parses scalar, operator-object, and comma-list filters', () => {
@@ -38,7 +38,30 @@ describe('parseFilterRequest', () => {
     });
   });
 
+  it('parses distinct from a comma string and an array, de-duping', () => {
+    expect(parseFilterRequest({ distinct: 'afsc,base' }).distinct).toEqual(['afsc', 'base']);
+    expect(parseFilterRequest({ distinct: ['afsc', 'base', 'afsc'] }).distinct).toEqual([
+      'afsc',
+      'base',
+    ]);
+    // No distinct key → the field is absent (not an empty array).
+    expect(parseFilterRequest({}).distinct).toBeUndefined();
+  });
+
   it('returns an empty input for an empty query', () => {
     expect(parseFilterRequest({})).toEqual({});
+  });
+});
+
+describe('parseDistinct', () => {
+  it('splits a comma string, trims, drops empties and dups', () => {
+    expect(parseDistinct(' a , b ,a, ,c')).toEqual(['a', 'b', 'c']);
+  });
+  it('filters non-strings out of an array', () => {
+    expect(parseDistinct(['a', 2, null, 'b'])).toEqual(['a', 'b']);
+  });
+  it('returns [] for nullish/non-string scalars', () => {
+    expect(parseDistinct(undefined)).toEqual([]);
+    expect(parseDistinct(42)).toEqual([]);
   });
 });

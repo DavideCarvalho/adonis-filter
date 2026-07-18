@@ -85,6 +85,11 @@ function collectPaths(
   const base = kind === 'filterable' ? spec.filterable : spec.sortable;
   if (Array.isArray(base)) out.push(...base);
 
+  // Computed/virtual fields are both filterable and sortable — surface their
+  // declared aliases in the client's field union so a generated client can
+  // reference `fullName`/`postCount` exactly like a real column.
+  if (spec.computed) out.push(...Object.keys(spec.computed));
+
   const walk = (
     relations: Readonly<Record<string, RelationSpec>>,
     prefix: string[],

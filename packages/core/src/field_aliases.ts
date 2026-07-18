@@ -64,3 +64,8 @@ export function remapSortAliases(sorts: SortItem[], aliases: FieldAliases): Sort
     direction: sort.direction,
   }));
 }
+
+/** Resolves every distinct field name through the alias map (returns a new array). */
+export function remapDistinctAliases(fields: string[], aliases: FieldAliases): string[] {
+  return fields.map((field) => resolveFieldAlias(aliases, field));
+}

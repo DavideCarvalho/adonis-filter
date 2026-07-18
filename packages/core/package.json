@@ -57,7 +57,11 @@
   "devDependencies": {
     "@adonisjs/core": "^7.3.0",
     "@adonisjs/lucid": "22.4.2",
+    "@types/luxon": "^3.7.2",
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.20.0",
+    "luxon": "^3.7.2",
+    "pg": "^8.22.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },

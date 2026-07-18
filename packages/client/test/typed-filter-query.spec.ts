@@ -172,4 +172,20 @@ describe('filterQueryTyped', () => {
     const result = q.build();
     expect(result.custom).toBe('value');
   });
+
+  it('whereDynamic / sortDynamic accept an off-union runtime field', () => {
+    const q = filterQueryTyped<UserFields>()
+      // `runtimeCol` is NOT in UserFields — the typed `where` would reject it,
+      // but the dynamic escape hatch takes a plain string.
+      .whereDynamic('runtimeCol', 'gte', 5)
+      .sortDynamic('anotherRuntimeCol', 'desc');
+    const result = q.build();
+    expect(result.filter.where).toEqual([{ field: 'runtimeCol', operator: 'gte', value: 5 }]);
+    expect(result.sort).toEqual([{ field: 'anotherRuntimeCol', direction: 'desc' }]);
+  });
+
+  it('typed where still rejects an off-union field at compile time', () => {
+    // @ts-expect-error — 'runtimeCol' is not assignable to UserFields
+    filterQueryTyped<UserFields>().where('runtimeCol', 'equals', 1);
+  });
 });

@@ -1,6 +1,11 @@
 import { columnFiltersToQueryString, flatObjectToQueryString } from './to-query-string.js';
+import { FILTER_OPERATORS } from './types.js';
 import type { ColumnFilter, FilterOperator } from './types.js';
-import { validateAddOperator, validateOperatorValue } from './validate-operator-value.js';
+import {
+  UNARY_OPERATORS,
+  validateAddOperator,
+  validateOperatorValue,
+} from './validate-operator-value.js';
 
 /**
  * A single sort directive: field name and direction.
@@ -163,6 +168,43 @@ export class FilterQueryBuilder {
         value: operatorOrValue,
       });
     }
+    this.notify();
+    return this;
+  }
+
+  /**
+   * Runtime-driven escape hatch for applying a filter whose field name comes
+   * from state you don't control at compile time — e.g. an AG-Grid column id, a
+   * user-built query, or any field the codegen'd typed builder doesn't know
+   * about. Unlike {@link where}, the field is a plain `string` (the typed
+   * builder narrows `where` to the generated field union, but keeps
+   * `whereDynamic` open), so it deliberately steps outside the type-level
+   * allow-list — the SERVER's allow-list is still the real security boundary.
+   *
+   * Same **replace** semantics as {@link where} (one filter per field). The
+   * operator is validated against the known operator set and its value shape.
+   *
+   * @example
+   * // field name only known at runtime
+   * builder.whereDynamic(column.id, filterModel.operator, filterModel.value)
+   *
+   * // Unary operators accept the 2-arg form
+   * builder.whereDynamic('deletedAt', 'isNull')
+   */
+  whereDynamic(field: string, operator: FilterOperator, value?: unknown): this {
+    if (!FILTER_OPERATORS.includes(operator)) {
+      throw new Error(`Unknown filter operator "${String(operator)}".`);
+    }
+    validateOperatorValue(operator, value);
+    // Replace any existing filter(s) for this field — same semantics as where().
+    this.conditions = this.conditions.filter((c) => c.field !== field);
+    this.conditions.push({
+      field,
+      operator,
+      // Unary operators carry no value — strip any (commonly stale) value the
+      // caller passed so the emitted condition stays canonical.
+      value: UNARY_OPERATORS.has(operator) ? undefined : value,
+    });
     this.notify();
     return this;
   }
@@ -449,6 +491,20 @@ export class FilterQueryBuilder {
     this.sorts.push({ field, direction });
     this.notify();
     return this;
+  }
+
+  /**
+   * Runtime-driven escape hatch for a sort whose field name comes from state you
+   * don't control at compile time (the sort counterpart of
+   * {@link whereDynamic}). Identical to {@link sort} at runtime — it exists so
+   * the typed builder can keep `sort` narrowed to the generated field union
+   * while still offering an explicit, untyped `string` entry point.
+   *
+   * @example
+   * builder.sortDynamic(column.id, sortModel.direction)
+   */
+  sortDynamic(field: string, direction: 'asc' | 'desc' = 'asc'): this {
+    return this.sort(field, direction);
   }
 
   /**

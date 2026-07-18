@@ -53,6 +53,35 @@ describe('applyFilter — allow-listing', () => {
     applyFilter(qb, { search: 'foo' }, { allowed: '*', searchable: ['name'] });
     expect(qb.find('orWhereILike')?.args).toEqual(['name', '%foo%']);
   });
+
+  it('applies distinct on allowed fields and drops disallowed ones', () => {
+    const qb = new MockQueryBuilder();
+    applyFilter(qb, { distinct: ['city', 'secret'] }, { allowed: ['city'] });
+    expect(qb.find('distinct')?.args).toEqual(['city']);
+  });
+
+  it('resolves a distinct alias before allow-listing', () => {
+    const qb = new MockQueryBuilder();
+    applyFilter(qb, { distinct: ['town'] }, { allowed: ['city'], aliases: { town: 'city' } });
+    expect(qb.find('distinct')?.args).toEqual(['city']);
+  });
+
+  it('throws on a disallowed distinct field when throwOnInvalid', () => {
+    const qb = new MockQueryBuilder();
+    expect(() =>
+      applyFilter(qb, { distinct: ['secret'] }, { allowed: ['city'], throwOnInvalid: true }),
+    ).toThrow(InvalidColumnFilterError);
+  });
+
+  it('adds no distinct when none is requested', () => {
+    const qb = new MockQueryBuilder();
+    applyFilter(
+      qb,
+      { filters: [{ field: 'city', operator: 'equals', value: 'x' }] },
+      { allowed: '*' },
+    );
+    expect(qb.find('distinct')).toBeUndefined();
+  });
 });
 
 describe('applyFilter — pagination resolution', () => {

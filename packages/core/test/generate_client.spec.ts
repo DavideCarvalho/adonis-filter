@@ -19,6 +19,47 @@ const sampleSpec = defineFilter({
   maxSize: 100,
 });
 
+describe('computed fields in codegen', () => {
+  it('surfaces computed aliases in both filterable and sortable field unions', () => {
+    const spec = defineFilter({
+      filterable: ['first', 'last'],
+      computed: { fullName: "first || ' ' || last", postCount: () => '(SELECT 1)' },
+    });
+    expect(filterableFieldPaths(spec)).toEqual(['first', 'last', 'fullName', 'postCount']);
+    expect(sortableFieldPaths(spec)).toEqual(['first', 'last', 'fullName', 'postCount']);
+    const code = generateFilterClient(spec, { name: 'people' });
+    expect(code).toContain('"fullName"');
+    expect(code).toContain('"postCount"');
+  });
+});
+
+describe('aggregate fields in codegen', () => {
+  it('surfaces discovered aggregate keys in the client field union', () => {
+    // Minimal fake Lucid model exposing a hasMany relation's metadata.
+    const model = {
+      table: 'authors',
+      $getRelation() {
+        return {
+          type: 'hasMany',
+          boot() {},
+          relatedModel: () => ({ table: 'posts' }),
+          foreignKeyColumnName: 'author_id',
+          localKeyColumnName: 'id',
+        } as never;
+      },
+    };
+    const spec = defineFilter({
+      model,
+      filterable: ['name'],
+      relations: { posts: { aggregates: ['views'] } },
+    });
+    const code = generateFilterClient(spec, { name: 'authors' });
+    expect(code).toContain('"posts.$count"');
+    expect(code).toContain('"posts.$sum.views"');
+    expect(code).toContain('"posts.$max.views"');
+  });
+});
+
 describe('filterableFieldPaths / sortableFieldPaths', () => {
   it('enumerates base + relation-dotted filterable paths', () => {
     expect(filterableFieldPaths(sampleSpec)).toEqual([

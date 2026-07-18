@@ -41,6 +41,26 @@ export function toColumnFilters(field: string, value: unknown): ColumnFilter[] {
   return [{ field, operator: 'equals', value }];
 }
 
+/**
+ * Parse the `distinct` param into a de-duplicated list of field names. Accepts a
+ * comma-separated string (`distinct=afsc,base`) or a repeated/array form
+ * (`distinct[]=afsc&distinct[]=base`) — the shapes the client's `toQueryString()`
+ * and structured `build()` emit. Non-string entries are ignored.
+ */
+export function parseDistinct(distinct: unknown): string[] {
+  let raw: string[] = [];
+  if (typeof distinct === 'string') raw = distinct.split(',');
+  else if (Array.isArray(distinct))
+    raw = distinct.filter((s): s is string => typeof s === 'string');
+
+  const out: string[] = [];
+  for (const entry of raw) {
+    const field = entry.trim();
+    if (field.length > 0 && !out.includes(field)) out.push(field);
+  }
+  return out;
+}
+
 /** Parse the `sort` param (`-createdAt,name` or `sort[]=…`) into ordered {@link SortItem}s. */
 export function parseSort(sort: unknown): SortItem[] {
   let raw: string[] = [];
@@ -78,6 +98,7 @@ function parsePagination(qs: Record<string, unknown>): { page?: number; size?: n
  * - `filter[id]=1,2,3` / `filter[id][]=1&filter[id][]=2` → IN
  * - `filter[age][gte]=18` → operator filter
  * - `sort=-createdAt,name` → sort items
+ * - `distinct=afsc,base` / `distinct[]=afsc&distinct[]=base` → distinct fields
  * - `search=term`, `page`/`size` (or `page[number]`/`page[size]`)
  *
  * Pure reshape — no validation or allow-listing here; that happens in
@@ -96,6 +117,9 @@ export function parseFilterRequest(qs: Record<string, unknown>): FilterInput {
 
   const sort = parseSort(qs.sort);
   if (sort.length > 0) out.sort = sort;
+
+  const distinct = parseDistinct(qs.distinct);
+  if (distinct.length > 0) out.distinct = distinct;
 
   if (typeof qs.search === 'string' && qs.search.length > 0) out.search = qs.search;
 
