@@ -1,6 +1,6 @@
 {
   "name": "@adonis-agora/filter-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Client-side query builder for @agora/filter — build filter query strings, with optional TanStack Table state sync.",
   "license": "MIT",
   "repository": {
@@ -24,7 +24,11 @@
       "default": "./dist/tanstack.js"
     }
   },
-  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -36,13 +40,25 @@
     "@tanstack/table-core": ">=8.0.0"
   },
   "peerDependenciesMeta": {
-    "@tanstack/table-core": { "optional": true }
+    "@tanstack/table-core": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@tanstack/table-core": "^8.20.0",
     "typescript": "^5.4.0",
     "vitest": "^3.0.0"
   },
-  "engines": { "node": ">=20.6.0" },
-  "keywords": ["adonisjs", "adonis", "filter", "query", "client", "builder", "agora"]
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "keywords": [
+    "adonisjs",
+    "adonis",
+    "filter",
+    "query",
+    "client",
+    "builder",
+    "agora"
+  ]
 }

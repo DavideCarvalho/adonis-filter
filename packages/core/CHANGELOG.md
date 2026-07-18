@@ -1,5 +1,11 @@
 # @adonis-agora/filter
 
+## 0.6.0
+
+### Minor Changes
+
+- Parity sync from nestjs-filter: execute the server-side `distinct` projection (was a silent no-op), computed (virtual) fields for filter + sort (verbatim-string + `({alias}) => sql` forms), and native to-many aggregate fields (`$count`/`$sum`/`$avg`/`$min`/`$max`) auto-discovered from Lucid relation metadata — value stays parameterized (injection-safe), identifiers quoted.
+
 ## 0.5.0
 
 ### Minor Changes
