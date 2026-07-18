@@ -1,0 +1,242 @@
+---
+title: Computed Fields
+icon: Variable
+description: Declare virtual/computed columns on a filter spec — a dev-authored SQL expression (string or correlated-subquery function) that becomes filterable and sortable exactly like a real column, with the client value always parameterized.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+A **computed field** is a virtual column: you declare an alias name and the SQL expression behind it, and from that point the alias is filterable and sortable exactly as if it were a real database column. The client filters on `fullName` or sorts by `postCount` and never knows — or needs to know — that there is no such column on the table.
+
+This is the escape hatch for everything the flat column allow-list can't express: a concatenation (`first || ' ' || last`), an arithmetic derivation (`price * quantity`), a `CASE` bucket, or a correlated subquery that counts related rows. You author the expression once at declaration time; the client only ever references the alias, and its filter *value* always rides through as a bound parameter.
+
+<Callout type="info" title="Aggregates are computed fields too">
+The to-many aggregate feature (`posts.$count`, `posts.$sum.views`) is built on exactly this mechanism — those fields are auto-generated computed sources with correlated-subquery SQL. See [To-many Aggregates](/docs/filter/definitions/aggregates). Everything on this page (routing, allow-list bypass, parameter binding) applies identically to them.
+</Callout>
+
+---
+
+## The `computed` option
+
+Add a `computed` map to `defineFilter` — alias → its SQL source. Each declared alias becomes a first-class filter/sort target:
+
+```ts title="app/filters/user_filter.ts"
+import { defineFilter } from '@adonis-agora/filter'
+import User from '#models/user'
+
+export const userFilter = defineFilter({
+  filterable: ['status', 'age'],
+  sortable: ['createdAt'],
+
+  // The root table name — the correlated-subquery outer alias (see below).
+  table: 'users',
+
+  computed: {
+    // String form: inlined verbatim as the left-hand side of the comparison.
+    fullName: "first_name || ' ' || last_name",
+
+    // Function form: receives the root table alias so it can emit a correlated
+    // subquery that references the outer row.
+    postCount: ({ alias }) =>
+      `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)`,
+  },
+})
+```
+
+Now a request can treat `fullName` and `postCount` as ordinary fields:
+
+```
+GET /users?filter[fullName][contains]=silva&filter[postCount][gte]=5&sort=-postCount
+```
+
+which produces (Postgres):
+
+```sql
+WHERE ("first_name" || ' ' || "last_name") ILIKE ?          -- binding: '%silva%'
+  AND ((SELECT COUNT(*) FROM posts WHERE posts.author_id = "users".id)) >= ?  -- binding: 5
+ORDER BY ((SELECT COUNT(*) FROM posts WHERE posts.author_id = "users".id)) DESC
+```
+
+The dev expression is inlined; the client's `silva` and `5` are positional bindings. That split is the whole safety story — see [Injection safety](#injection-safety).
+
+<Callout type="warn" title="A computed alias is its own allow-list">
+Computed fields are a **separate namespace** from real columns. A declared alias bypasses the `filterable`/`sortable` column lists on purpose — its *declaration* is its allow-list. You do **not** add `fullName` to `filterable`; declaring it under `computed` is what authorizes it. Conversely, a field that is neither a declared computed alias nor in the column allow-list is dropped as usual.
+</Callout>
+
+---
+
+## The two source forms
+
+The value in the `computed` map is a `ComputedSource` — a `string` **or** a `(ctx: ComputedContext) => string` function.
+
+<Steps>
+<Step>
+### String form — verbatim
+
+The string is inlined exactly as written, with no token substitution:
+
+```ts
+computed: {
+  fullName: "first_name || ' ' || last_name",
+  grossValue: 'price * quantity',
+  isAdult: 'age >= 18',
+}
+```
+
+Use it for any expression that only references columns of the root table. Because there is no substitution, a string form **cannot** reference the outer table alias — if you need a correlated subquery, use the function form.
+</Step>
+
+<Step>
+### Function form — correlated subqueries
+
+The function receives a `ComputedContext` whose single field, `alias`, is the root table's SQL alias. Lucid gives the main table no generated alias, so **the table name is the alias** — that's why you set `table` on the spec. Splice `alias` wherever the subquery must reference the outer row:
+
+```ts
+computed: {
+  // count related rows
+  postCount: ({ alias }) =>
+    `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)`,
+
+  // a derived flag from a correlated EXISTS
+  hasComments: ({ alias }) =>
+    `EXISTS (SELECT 1 FROM comments WHERE comments.user_id = ${alias}.id)`,
+}
+```
+
+With `table: 'users'`, `${alias}` expands to `users`, so `postCount` emits `(SELECT COUNT(*) FROM posts WHERE posts.author_id = users.id)`.
+</Step>
+</Steps>
+
+<Callout type="warn" title="`table` is required for the function form">
+The function form (and to-many aggregates) reference the outer row through `alias`, which comes from the spec's `table`. Set `table: 'users'` explicitly, or pass `model: User` — `defineFilter` reads the model's `table` name as the default. Without either, `alias` resolves to an empty string and the subquery SQL is malformed.
+</Callout>
+
+---
+
+## How a computed filter is routed
+
+The runner treats a computed alias as its own path, distinct from the column pipeline:
+
+1. **Filters** — a top-level leaf filter (a `field` with no `AND`/`OR` children) whose name is an own key of the `computed` map is routed to the computed hook *before* alias resolution or allow-listing. It never touches the column `allowed` list. Everything else is a normal column filter.
+2. **Sorts** — a sort directive whose field is a declared computed key is applied via an appended `orderByRaw`. Because it appends (like a real-column `orderBy`), a computed sort and a column sort **compose in request order**: `sort=-postCount,name` orders by the subquery first, then the column.
+3. **Value binding** — whatever operator the client uses (`equals`, `gte`, `contains`, `in`, `between`, `isNull`, …), the computed expression becomes the parenthesized left-hand side and the client value(s) become `?` bindings. All 22 operators are supported.
+
+<Callout type="info">
+Computed filtering is only recognized on **top-level leaf** filters — a computed alias nested inside an `AND`/`OR` group is treated as a normal column and will be dropped unless it is also a real column. Keep computed conditions at the top level.
+</Callout>
+
+---
+
+## Injection safety
+
+The safety contract is the same one real-column filters have, split cleanly in two:
+
+- The **expression** is authored by *you*, the developer, at declaration time — a verbatim string or a function's output. It is the only fragment inlined into SQL. The client can never supply or influence it; the client only sends the *alias name*, which is matched against your `computed` map by exact own-key lookup (prototype keys like `__proto__` never match).
+- The client's filter **value** always travels as a positional `?` binding — `whereRaw('(expr) = ?', [value])`. It is never interpolated.
+
+So even a `whereRaw`-based path stays injection-safe: dev SQL in, parameterized values through.
+
+---
+
+## Under the hood
+
+The routing above is built from three exported primitives, useful if you drive a builder outside the runner (a non-HTTP caller, a test, a bespoke endpoint):
+
+| Export | What it does |
+|---|---|
+| `resolveComputedExpression(source, alias)` | Resolves a `ComputedSource` to its final SQL string — returns a string source verbatim, or invokes a function source with `{ alias }`. |
+| `applyComputedField(qb, expression, filter)` | Applies one `ColumnFilter` on a resolved expression to the builder — parenthesizes the expression as the LHS, binds the value(s), routes by operator. |
+| `applyComputedSort(qb, expression, direction)` | Appends an `ORDER BY (expression) asc|desc` via `orderByRaw`. |
+
+```ts
+import {
+  resolveComputedExpression,
+  applyComputedField,
+  applyComputedSort,
+} from '@adonis-agora/filter'
+import User from '#models/user'
+
+const query = User.query()
+
+// Resolve the source (function form → correlated subquery string):
+const expr = resolveComputedExpression(
+  ({ alias }) => `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)`,
+  'users', // the outer alias
+)
+
+// Filter: postCount >= 5
+applyComputedField(query, expr, { field: 'postCount', operator: 'gte', value: 5 })
+
+// Sort: postCount desc
+applyComputedSort(query, expr, 'desc')
+
+const rows = await query
+```
+
+The relevant types are exported too:
+
+```ts
+import type {
+  ComputedFields,   // Record<string, ComputedSource>
+  ComputedSource,   // string | ((ctx: ComputedContext) => string)
+  ComputedContext,  // { alias: string }
+} from '@adonis-agora/filter'
+```
+
+---
+
+## Full example
+
+A `users` endpoint that exposes a computed display name and a live post count as first-class filter/sort fields:
+
+```ts title="app/filters/user_filter.ts"
+import { defineFilter } from '@adonis-agora/filter'
+import User from '#models/user'
+
+export const userFilter = defineFilter({
+  filterable: ['status', 'age'],
+  sortable: ['createdAt'],
+  model: User, // supplies `table: 'users'` for the correlated subquery alias
+
+  computed: {
+    fullName: "first_name || ' ' || last_name",
+    postCount: ({ alias }) =>
+      `(SELECT COUNT(*) FROM posts WHERE posts.author_id = ${alias}.id)`,
+  },
+})
+```
+
+```ts title="app/controllers/users_controller.ts"
+import type { HttpContext } from '@adonisjs/core/http'
+import { applyFilterFromRequest } from '@adonis-agora/filter'
+import { userFilter } from '#filters/user_filter'
+import User from '#models/user'
+
+export default class UsersController {
+  async index(ctx: HttpContext) {
+    const query = User.query()
+    const { page, size } = applyFilterFromRequest(query, userFilter, ctx)
+    return query.paginate(page, size)
+  }
+}
+```
+
+```ts title="web/users.ts — the client references the aliases like any field"
+import { filterQuery } from '@agora/filter-client'
+
+const qs = filterQuery()
+  .contains('fullName', 'silva')  // computed string expression
+  .gte('postCount', 5)            // computed correlated subquery
+  .sortDesc('postCount')          // sort by the subquery
+  .page(0, 25)
+  .toQueryString()
+
+await fetch(`/users?${qs}`)
+```
+
+The prolific "silva"s, most-published first — from two virtual columns the table doesn't physically have.
+
+<Callout type="info">
+Computed aliases are also surfaced by the client codegen, so `make:filter-client` emits them into the generated field union. See [Client Codegen](/docs/filter/codegen).
+</Callout>

@@ -24,9 +24,18 @@ return query.paginate(page, size)
 ```
 
 The server core covers column operators, AND/OR, sort, ILIKE search, offset
-pagination, and field allow-listing. Advanced surfaces from the NestJS original
-(relation filtering, cursor pagination, computed/vector/distinct) are extensible
-via the `QueryBuilderLike` adapter and planned as follow-ups.
+pagination, and field allow-listing. The advanced surfaces from the NestJS
+original have **shipped**: relation filtering with a depth cap, cursor (keyset)
+pagination, `computed`/virtual fields, to-many aggregates (`$count`/`$sum`/…),
+`distinct` projection, Postgres tsvector full-text search, and pgvector
+embedding-similarity ordering. There is also a declarative `defineFilter` spec
+(tenant scope, default filters/sort, field aliases, server-side value coercion),
+an optional provider registering chainable Lucid macros (`applyFilterFromRequest`
+/ `filterPaginate`), and a `make:filter-client` codegen. Everything is built on
+the structural `QueryBuilderLike` adapter, so Lucid stays a peer, not a hard
+dependency.
+
+See the [documentation](./docs) for the full surface.
 
 ## License
 

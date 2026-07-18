@@ -1,5 +1,6 @@
 ---
 title: Defining Filters
+icon: FileCog
 description: defineFilter + applyFilterFromRequest — a declarative, reusable filter definition (filterable/sortable allow-lists, relation whitelist with a depth cap, tenant scope, and server defaults) applied to a Lucid query in one call.
 ---
 
@@ -46,13 +47,17 @@ The returned `FilterSpec` is frozen and reusable. Its `isFilterable(field)` / `i
 
 | Option | What it does |
 |---|---|
-| `filterable` | Base columns clients may filter on. `'*'` allows any base column. **Required.** |
+| `filterable` | Base columns clients may filter on. `'*'` allows any base column. Also accepts a **colocated map** — see [The colocated `filterable` map](#the-colocated-filterable-map) below. **Required.** |
 | `sortable` | Base columns clients may sort on. Defaults to `filterable`. |
 | `searchable` | Columns the free-text `search` term scans with a portable ILIKE. |
+| `fieldTypes` | Per-field column value kinds — drives server-side **value coercion** and type-aware client codegen. See [Field types & value coercion](#field-types--value-coercion) below. |
 | `fullText` | Opt-in Postgres tsvector search — routes `search` through `websearch_to_tsquery`. See [Full-Text Search](/docs/filter/search/full-text). |
 | `relations` | Whitelisted relations + their nested `filterable`/`sortable` columns. See [Relation Filtering](/docs/filter/definitions/relations). |
+| `model` | The owning Lucid model — unlocks [to-many aggregates](/docs/filter/definitions/aggregates) (`$count`/`$sum`/…) by introspecting relation metadata, and supplies the default `table`. Optional; features degrade gracefully without it. |
+| `table` | The root table name — the correlated-subquery outer alias surfaced to [computed](/docs/filter/definitions/computed)/aggregate function sources. Defaults to `model.table`. |
 | `maxDepth` | Max relation-path hops (base column = 0). Defaults to the deepest declared relation nesting. |
 | `aliases` | Client-alias → target-field remapping. See [Field Aliases](/docs/filter/definitions/aliases). |
+| `computed` | Virtual/computed fields — alias → dev-declared SQL expression. See [Computed Fields](/docs/filter/definitions/computed). |
 | `vectorSimilarity` | Opt-in pgvector embedding-similarity ordering. See [Vector Similarity](/docs/filter/search/vector-similarity). |
 | `tenant` | Auto-scope a column to the tenant id resolved from ctx. |
 | `defaultFilters` | Server-declared filters always AND-combined with the request (bypass the allow-list — trusted policy). |
@@ -62,6 +67,50 @@ The returned `FilterSpec` is frozen and reusable. Its `isFilterable(field)` / `i
 
 <Callout type="info">
 `defineFilter` validates the **declaration** itself — a missing `filterable`, or a negative/non-integer `maxDepth`, throws `FilterDefinitionError` at wiring time (a developer error), separate from the request-time `InvalidColumnFilterError` the runner raises for a bad client request.
+</Callout>
+
+### Field types & value coercion
+
+A filter value arriving over a query string is **always a string** — `?filter[dayOfWeek][equals]=3` yields `'3'`. Postgres papers over the benign cases with an implicit cast (`day_of_week = '3'` works, `is_recurring = 'false'` works), so the gap stays invisible until a client sends something uncastable: `filter[isRecurring]=xyz` raises `invalid input syntax for type boolean` **at the database**, surfacing as a 500 driven by pure user input.
+
+`fieldTypes` closes that gap. Declare a field's kind and its value is coerced up front; a value that can't be coerced is treated exactly like a disallowed field — dropped by default, or a loud `InvalidColumnFilterError` (→ 400) under `throwOnInvalid`:
+
+```ts
+import { defineFilter } from '@adonis-agora/filter'
+
+export const scheduleFilter = defineFilter({
+  filterable: ['advisorId', 'dayOfWeek', 'isRecurring'],
+  fieldTypes: {
+    dayOfWeek: { kind: 'number' },    // '3' → 3 ; 'xyz' → rejected
+    isRecurring: { kind: 'boolean' }, // 'true'/'1' → true, 'false'/'0' → false ; else rejected
+  },
+})
+```
+
+The kinds are `'string' | 'number' | 'boolean' | 'date' | 'json' | 'unknown'` (backed by `coerceFilterValue`). Coercion rules worth knowing: an empty string is **not** a valid number (`Number('')` would silently become `0`), `null` passes through every kind (a legitimate `IS NULL`), and a `date` string is validated but handed back **verbatim** (the driver parses ISO strings; re-zoning `'2026-07-15'` to midnight UTC would shift the day for negative-offset clients). Undeclared fields keep the previous behaviour — no coercion — so adding `fieldTypes` to an existing spec is backwards compatible.
+
+The same declaration drives type-aware client codegen: `make:filter-client` reads it and narrows operators per field. One declaration, both ends — see [Client Codegen](/docs/filter/codegen).
+
+### The colocated `filterable` map
+
+When several fields have a non-string kind, writing each one twice (once in `filterable`, once in `fieldTypes`) is noise. `filterable` therefore also accepts a **map form** (`FilterableMap`) that states each field *and* its kind in one place:
+
+```ts
+// These two are equivalent:
+defineFilter({
+  filterable: ['advisorId', 'dayOfWeek', 'isRecurring'],
+  fieldTypes: { dayOfWeek: { kind: 'number' }, isRecurring: { kind: 'boolean' } },
+})
+
+defineFilter({
+  filterable: { advisorId: 'string', dayOfWeek: 'number', isRecurring: 'boolean' },
+})
+```
+
+The map desugars at the boundary: its keys become the allow-list, its values become `fieldTypes`. Everything downstream sees the array form it always saw, so this is purely an authoring convenience. A field whose kind carries no contract uses `'string'` — the no-op kind. An explicit `fieldTypes` entry still wins per field, which is how you add codegen-only richness (`enumValues`, `typeRef`) on top of a bare kind.
+
+<Callout type="info">
+The map form is only for the **base** `filterable` list. Relation columns (`relations.posts.filterable`) stay the array/`'*'` form.
 </Callout>
 
 ---

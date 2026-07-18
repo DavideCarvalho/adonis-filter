@@ -1,4 +1,7 @@
 {
   "title": "Codegen",
-  "pages": ["index"]
+  "pages": [
+    "index"
+  ],
+  "icon": "Braces"
 }

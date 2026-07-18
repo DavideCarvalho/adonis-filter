@@ -1,5 +1,6 @@
 ---
 title: Client Builder
+icon: Code
 description: "@agora/filter-client — a zero-dependency, framework-agnostic filter query builder, its typed variant, the reactive store contract, and TanStack Table sync."
 ---
 
@@ -214,6 +215,38 @@ The operator matrix the types enforce mirrors the runtime validator exactly:
 
 <Callout type="info">
 Nullable fields (`Date | null`) get the **base** type's operators — `NonNullable` strips the `null` so `deletedAt: Date | null` still gets ordering operators, plus the always-valid `isNull`/`isNotNull`.
+</Callout>
+
+### `whereDynamic` / `sortDynamic` — the runtime escape hatch
+
+The typed builder narrows `where` and `sort` to the *known* field union — which is exactly what you want until the field name isn't known at compile time: an AG-Grid column id, a user-built query, a field the codegen'd builder doesn't cover. For those, `whereDynamic` and `sortDynamic` take a plain `string` field and deliberately step outside the type-level allow-list.
+
+```ts
+// The field comes from runtime state (a grid column, a saved view, user input):
+builder.whereDynamic(column.id, filterModel.operator, filterModel.value)
+
+// Unary operators accept the 2-arg form:
+builder.whereDynamic('deletedAt', 'isNull')
+
+// Sort counterpart:
+builder.sortDynamic(column.id, sortModel.direction) // direction defaults to 'asc'
+```
+
+They are **not** unvalidated: `whereDynamic` still checks the operator against the known operator set (an unknown operator throws) and validates the value shape against it, and it keeps the same **replace** semantics as `where` (one filter per field). `sortDynamic` is identical to `sort` at runtime — it exists purely so the typed builder can keep `sort` narrowed to the generated union while still offering an explicit untyped entry point.
+
+```ts
+import { filterQueryTyped } from '@agora/filter-client'
+
+type UserFields = 'name' | 'age'
+
+filterQueryTyped<UserFields>()
+  .contains('name', 'Al')                       // ✅ typed, narrowed field
+  .whereDynamic('customAttr.color', 'equals', 'red') // ✅ field outside the union
+  .sortDynamic('customAttr.color', 'desc')
+```
+
+<Callout type="warn" title="The server allow-list is still the real boundary">
+`whereDynamic`/`sortDynamic` only bypass the **client's** compile-time field union — a convenience, never a security control. The server's `applyFilter` allow-list is the actual boundary: a dynamic field the server doesn't whitelist is dropped (or rejected under `throwOnInvalid`) regardless of what the client sent.
 </Callout>
 
 ---

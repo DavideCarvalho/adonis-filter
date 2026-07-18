@@ -1,4 +1,7 @@
 {
   "title": "Testing Utilities",
-  "pages": ["index"]
+  "pages": [
+    "index"
+  ],
+  "icon": "FlaskConical"
 }

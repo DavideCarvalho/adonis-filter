@@ -1,5 +1,6 @@
 ---
 title: Getting Started
+icon: Rocket
 description: Add declarative query filtering to an AdonisJS project in minutes — install, parse the request, apply it to a Lucid query under an allow-list, and paginate.
 ---
 
@@ -14,7 +15,7 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 | [`@adonis-agora/filter`](/docs/filter/guides/lucid) | server (AdonisJS) | parse a request → apply it to a Lucid query under a field allow-list → resolve pagination |
 | [`@agora/filter-client`](/docs/filter/guides/client) | browser / Node | a fluent, type-safe builder that emits exactly the query string the server parses |
 
-The server package is **plain functions** — no provider to register, no config file, no decorators. You import `parseFilterRequest` and `applyFilter` and call them. Most endpoints are wired in a couple of minutes.
+The server package is **plain functions** — no config file, no decorators. You import `parseFilterRequest` and `applyFilter` and call them, and that alone wires most endpoints in a couple of minutes. An **optional** provider adds chainable Lucid macros (`.applyFilterFromRequest()` / `.filterPaginate()`) on top if you want them — see [Provider & Macros](/docs/filter/guides/provider) — but nothing here requires it.
 
 ---
 
@@ -53,7 +54,7 @@ npm install @agora/filter-client
 ```
 
 <Callout type="info">
-`@adonis-agora/filter` has **no runtime dependency on Lucid** — it targets a structural `QueryBuilderLike` interface that any Lucid query builder satisfies. There is no service provider to register and nothing to add to `adonisrc.ts`.
+`@adonis-agora/filter` has **no runtime dependency on Lucid** — it targets a structural `QueryBuilderLike` interface that any Lucid query builder satisfies. The free functions need no service provider and nothing in `adonisrc.ts`. The package *does* ship an optional `./filter_provider` that registers chainable query-builder macros; register it only if you want that sugar (see [Provider & Macros](/docs/filter/guides/provider)). `node ace add @adonis-agora/filter` registers it for you.
 </Callout>
 
 ---

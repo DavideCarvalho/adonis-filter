@@ -1,0 +1,187 @@
+---
+title: To-many Aggregates
+icon: Sigma
+description: Filter and sort by a to-many relation's aggregate — posts.$count, posts.$sum.views, $avg / $min / $max — synthesised as correlated-subquery computed fields from a Lucid model's relation metadata.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Sometimes the thing you want to filter or sort by lives across a to-many relation and doesn't exist as a column at all: *users with more than 5 posts*, *articles ordered by total views*, *authors whose most-recent comment score exceeds 10*. To-many **aggregates** expose exactly those — a dotted, self-describing grammar (`posts.$count`, `posts.$sum.views`) that becomes a filterable and sortable virtual field.
+
+Under the hood each aggregate is a [computed field](/docs/filter/definitions/computed) whose SQL is a correlated subquery, auto-generated from your Lucid model's relation metadata. You don't write the subquery — you declare the relation and (for the column functions) which child columns are numeric, and the library synthesises the rest.
+
+---
+
+## The grammar
+
+An aggregate field is a single relation hop, a `$`-prefixed function, and — for the column functions — a child column:
+
+| Field | Meaning | Needs a column? |
+|---|---|---|
+| `<rel>.$count` | number of related rows | no |
+| `<rel>.$sum.<col>` | sum of a numeric child column | yes |
+| `<rel>.$avg.<col>` | average of a numeric child column | yes |
+| `<rel>.$min.<col>` | minimum of a child column | yes |
+| `<rel>.$max.<col>` | maximum of a child column | yes |
+
+So `posts.$count`, `posts.$sum.views`, `posts.$max.published_at` are all valid field names a client can filter or sort on — subject to the whitelist below.
+
+<Callout type="info">
+The pure parser behind the grammar, `parseAggregatePath(path)`, is exported. It turns `'posts.$sum.views'` into `{ relation: 'posts', fn: 'sum', column: 'views' }` (and returns `null` for anything that isn't an aggregate path), if you need to inspect or route these yourself.
+</Callout>
+
+---
+
+## Unlocking aggregates — the `model` option
+
+Aggregates are **off** by default. They activate only when the spec can introspect your relations, which needs two things: the owning Lucid `model`, and a `relations` whitelist that names the to-many relations.
+
+```ts title="app/filters/user_filter.ts"
+import { defineFilter } from '@adonis-agora/filter'
+import User from '#models/user'
+
+export const userFilter = defineFilter({
+  filterable: ['status'],
+  sortable: ['createdAt'],
+
+  // (1) The owning model — its relation metadata (FK / pivot columns) is read at
+  //     build time to synthesise the aggregate subqueries. Also supplies the
+  //     `table` name used as the correlated-subquery outer alias.
+  model: User,
+
+  // (2) Whitelist the to-many relations. `$count` is synthesised for every
+  //     to-many relation here; the column functions need `aggregates` (below).
+  relations: {
+    posts: {
+      filterable: ['title', 'status'],
+      // (3) Assert which child columns are numeric — this is the allow-list for
+      //     $sum / $avg / $min / $max on the relation.
+      aggregates: ['views', 'likes'],
+    },
+  },
+})
+```
+
+That single spec makes these fields filterable and sortable:
+
+- `posts.$count` — synthesised because `posts` is a whitelisted to-many relation.
+- `posts.$sum.views`, `posts.$avg.views`, `posts.$min.views`, `posts.$max.views`
+- `posts.$sum.likes`, `posts.$avg.likes`, `posts.$min.likes`, `posts.$max.likes`
+
+<Callout type="warn" title="Why `aggregates` must be listed explicitly">
+Lucid does not reflect a column's SQL type, so the library can't know which child columns are numeric. Listing a column under `RelationSpec.aggregates` is how **you** assert it — it is the allow-list for the column functions. `$count` needs no column and is always synthesised for a to-many relation; `$sum`/`$avg`/`$min`/`$max` exist only for the columns you name.
+</Callout>
+
+---
+
+## What gets synthesised
+
+`defineFilter` calls `discoverAggregateSources(model, relations)` at build time and merges the result into the spec's `computed` map. The synthesis is relation-kind aware:
+
+<Steps>
+<Step>
+### `hasMany` — direct foreign key
+
+A one-to-many relation correlates on the child's FK pointing back at the root PK:
+
+```sql
+-- posts.$count
+(SELECT COUNT(*) FROM "posts" WHERE "posts"."author_id" = "users"."id")
+
+-- posts.$sum.views
+(SELECT COALESCE(SUM("posts"."views"),0)
+   FROM "posts" WHERE "posts"."author_id" = "users"."id")
+```
+</Step>
+<Step>
+### `manyToMany` — through the pivot
+
+A many-to-many relation counts pivot rows for `$count`, and JOINs pivot → child *inside* the scalar subquery for the column functions:
+
+```sql
+-- roles.$count
+(SELECT COUNT(*) FROM "role_user" WHERE "role_user"."user_id" = "users"."id")
+
+-- roles.$max.level
+(SELECT MAX("roles"."level")
+   FROM "roles"
+   JOIN "role_user" ON "roles"."id" = "role_user"."role_id"
+   WHERE "role_user"."user_id" = "users"."id")
+```
+</Step>
+</Steps>
+
+The empty-collection semantics are chosen to be least-surprising: `$sum` coalesces to `0`, `$count` is naturally `0`, and `$avg`/`$min`/`$max` stay `NULL` (their natural result over zero rows). To-one relations (`belongsTo` / `hasOne`) are excluded — aggregates are a to-many concept.
+
+<Callout type="info" title="It degrades gracefully — never throws at wiring time">
+Discovery is capability-gated and per-relation fault-tolerant: a model without introspection yields no aggregates, and a relation that isn't on the model, is to-one, or can't be booted (e.g. no DB adapter yet) is simply skipped. So adding `model` never breaks `defineFilter` — aggregates activate only when the metadata is actually there.
+</Callout>
+
+---
+
+## Full example — filter and sort by an aggregate
+
+Find active users with at least 5 posts, ordered by their total post views, most first:
+
+```ts title="app/filters/user_filter.ts"
+import { defineFilter } from '@adonis-agora/filter'
+import User from '#models/user'
+
+export const userFilter = defineFilter({
+  filterable: ['status'],
+  model: User,
+  relations: {
+    posts: { filterable: ['status'], aggregates: ['views'] },
+  },
+})
+```
+
+```ts title="app/controllers/users_controller.ts"
+import type { HttpContext } from '@adonisjs/core/http'
+import { applyFilterFromRequest } from '@adonis-agora/filter'
+import { userFilter } from '#filters/user_filter'
+import User from '#models/user'
+
+export default class UsersController {
+  async index(ctx: HttpContext) {
+    const query = User.query()
+    const { page, size } = applyFilterFromRequest(query, userFilter, ctx)
+    return query.paginate(page, size)
+  }
+}
+```
+
+```ts title="web/users.ts — the client treats the aggregate like any field"
+import { filterQuery } from '@agora/filter-client'
+
+const qs = filterQuery()
+  .equals('status', 'active')
+  .gte('posts.$count', 5)      // to-many count as a filter
+  .sortDesc('posts.$sum.views') // to-many sum as a sort key
+  .page(0, 25)
+  .toQueryString()
+
+await fetch(`/users?${qs}`)
+```
+
+The request:
+
+```
+GET /users?filter[status]=active&filter[posts.$count][gte]=5&sort=-posts.$sum.views
+```
+
+produces (Postgres):
+
+```sql
+WHERE "status" = ?                                                          -- 'active'
+  AND ((SELECT COUNT(*) FROM "posts" WHERE "posts"."author_id" = "users"."id")) >= ?  -- 5
+ORDER BY ((SELECT COALESCE(SUM("posts"."views"),0)
+             FROM "posts" WHERE "posts"."author_id" = "users"."id")) DESC
+```
+
+The client value (`5`) is a bound parameter; the whole subquery is dev-generated. Aggregate fields inherit every property of computed fields — [injection safety](/docs/filter/definitions/computed#injection-safety), operator coverage, and codegen surfacing (so `make:filter-client` emits `posts.$count` and `posts.$sum.views` into the generated field union).
+
+<Callout type="warn">
+Each aggregate is an independent correlated subquery evaluated per row. That's exactly what you want for correctness, but sorting a large table by an aggregate can be expensive — index the child FK (and consider a materialised counter column for hot paths) if the table is big.
+</Callout>
