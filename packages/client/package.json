@@ -24,14 +24,11 @@
       "default": "./dist/tanstack.js"
     }
   },
-  "files": [
-    "dist/",
-    "README.md",
-    "CHANGELOG.md"
-  ],
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
   "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "pnpm run build",
     "test": "vitest run",
     "test:types": "tsc -p tsconfig.typecheck.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.typecheck.json"
@@ -52,13 +49,5 @@
   "engines": {
     "node": ">=20.6.0"
   },
-  "keywords": [
-    "adonisjs",
-    "adonis",
-    "filter",
-    "query",
-    "client",
-    "builder",
-    "agora"
-  ]
+  "keywords": ["adonisjs", "adonis", "filter", "query", "client", "builder", "agora"]
 }
