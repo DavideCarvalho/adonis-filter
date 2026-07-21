@@ -1,7 +1,5 @@
 {
   "title": "Pagination",
-  "pages": [
-    "index"
-  ],
+  "pages": ["index"],
   "icon": "Layers"
 }

@@ -11,7 +11,6 @@ function ctxOf(qs: Record<string, unknown>, extra: Record<string, unknown> = {})
 
 describe('defineFilter — declaration', () => {
   it('requires a filterable allow-list', () => {
-    // biome-ignore lint/suspicious/noExplicitAny: exercising the guard.
     expect(() => defineFilter({} as any)).toThrow(FilterDefinitionError);
   });
 

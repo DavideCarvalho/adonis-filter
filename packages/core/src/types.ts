@@ -59,7 +59,6 @@ export type InputSource =
   | 'auto'
   | 'query'
   | 'body'
-  // biome-ignore lint/suspicious/noExplicitAny: `string & {}` keeps literal autocomplete while allowing dot-paths.
   | (string & {})
   | ((req: unknown) => Record<string, unknown> | undefined);
 

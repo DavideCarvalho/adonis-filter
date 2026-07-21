@@ -1,9 +1,5 @@
 {
   "title": "Search",
-  "pages": [
-    "index",
-    "full-text",
-    "vector-similarity"
-  ],
+  "pages": ["index", "full-text", "vector-similarity"],
   "icon": "Search"
 }
